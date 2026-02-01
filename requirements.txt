@@ -1,3 +1,5 @@
 modelscope
 huggingface_hub
 tokenizers
+transformers
+jinja2
