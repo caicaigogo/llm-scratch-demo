@@ -54,7 +54,7 @@ class TestTransformer(unittest.TestCase):
         # torch.Size([1, 43])
         print(self.input_ids.shape)
 
-    def test_tok_embeddings(self):
+    def test_embed_tokens(self):
         # Embedding(151936, 896)
         print(self.embed_tokens)
 

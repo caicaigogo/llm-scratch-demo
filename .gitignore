@@ -5,3 +5,4 @@ data
 tokenizer_k
 Qwen
 **/*.egg-info
+**/__pycache__
