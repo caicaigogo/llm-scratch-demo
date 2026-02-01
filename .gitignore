@@ -1,0 +1,5 @@
+venv
+.idea
+data
+.DS_Store
+tokenizer_k
