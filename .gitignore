@@ -4,3 +4,4 @@ data
 .DS_Store
 tokenizer_k
 Qwen
+**/*.egg-info
