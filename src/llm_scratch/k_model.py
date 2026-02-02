@@ -15,7 +15,7 @@ class ModelConfig(PretrainedConfig):
             vocab_size: int = 6144,
             hidden_dim: int = None,
             multiple_of: int = 64,
-            norm_eps: float = 1e-5,
+            rms_norm_eps: float = 1e-5,
             max_seq_len: int = 512,
             dropout: float = 0.0,
             flash_attn: bool = True,
@@ -29,7 +29,7 @@ class ModelConfig(PretrainedConfig):
         self.vocab_size = vocab_size
         self.hidden_dim = hidden_dim
         self.multiple_of = multiple_of
-        self.norm_eps = norm_eps
+        self.rms_norm_eps = rms_norm_eps
         self.max_seq_len = max_seq_len
         self.dropout = dropout
         self.flash_attn = flash_attn
