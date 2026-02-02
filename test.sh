@@ -1,1 +1,1 @@
-python -m unittest -v tests.unit.test_k_model.TestTransformer.test_embed_tokens
+python -m unittest -v tests.unit.test_k_model.TestTransformer
