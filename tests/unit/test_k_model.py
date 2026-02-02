@@ -1,10 +1,14 @@
 import os
-import unittest
-from llm_scratch.k_model import ModelConfig, precompute_freq_cos_sin
-from torch import nn
-from transformers import AutoTokenizer, AutoConfig
 import torch
+from torch import nn
+import unittest
+from transformers import AutoTokenizer, AutoConfig
 
+from llm_scratch.k_model import (
+    ModelConfig,
+    precompute_freq_cos_sin,
+    RMSNorm
+)
 from utils.path import find_project_root_with_tests
 
 
@@ -13,8 +17,8 @@ class TestTransformer(unittest.TestCase):
     def setUp(self):
         project_root = find_project_root_with_tests()
         os.chdir(project_root)
-        model_type = 'Tiny-K'
-        # model_type = 'qwen2'
+        # model_type = 'Tiny-K'
+        model_type = 'qwen2'
         if model_type == 'Tiny-K':
             self.config = ModelConfig()
             self.embed_tokens = nn.Embedding(
@@ -36,6 +40,7 @@ class TestTransformer(unittest.TestCase):
             raise(Exception('no support model_type {}'.format(model_type)))
 
         self.head_dim = getattr(self.config, "head_dim", self.config.hidden_size // self.config.num_attention_heads)
+        self.rms_norm_eps = getattr(self.config, "rms_norm_eps", None)
 
         # 测试聊天模板
         messages = [
@@ -59,6 +64,9 @@ class TestTransformer(unittest.TestCase):
         # torch.Size([1, 43])
         print('input_ids shape ', self.input_ids.shape)
 
+        self.inputs_embeds = self.embed_tokens(self.input_ids)
+        print('inputs_embeds shape ', self.inputs_embeds.shape)
+
     def test_embed_tokens(self):
         # Embedding(151936, 896)
         print('embed_tokens ', self.embed_tokens)
@@ -74,4 +82,20 @@ class TestTransformer(unittest.TestCase):
         print('cos_emb shape ', cos_emb.shape)
         # torch.Size([43, 32])
         print('sin_emb shape ', sin_emb.shape)
+
+    def test_RMSNorm(self):
+
+        if self.rms_norm_eps:
+            # RMSNorm((896,), eps=1e-06)
+            norm = RMSNorm(self.config.hidden_size, self.rms_norm_eps)
+        else:
+            norm = RMSNorm(self.config.hidden_size)
+        print(norm)
+
+        input_hidden_states = self.inputs_embeds
+        # input_hidden_states shape  torch.Size([1,43, 896])
+        print('input_hidden_states shape ', input_hidden_states.shape)
+        # output_hidden_states shape  torch.Size([1, 43, 896])
+        output_hidden_states = norm(input_hidden_states)
+        print('output_hidden_states shape ', output_hidden_states.shape)
 

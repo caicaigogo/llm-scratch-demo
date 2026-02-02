@@ -1,5 +1,6 @@
 from transformers import PretrainedConfig
 import torch
+from torch import nn
 
 
 class ModelConfig(PretrainedConfig):
@@ -65,4 +66,29 @@ def precompute_freq_cos_sin(head_dim: int, max_seq_len: int, base: float = 10000
     pos_sin = torch.sin(pos_embedding)
 
     return pos_cos, pos_sin
+
+
+class RMSNorm(nn.Module):
+
+    def __init__(self, hidden_size: int, eps: float = 1e-6):
+
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(hidden_size))
+        # eps是为了防止除以0的情况
+        self.variance_epsilon = eps
+
+    def forward(self, hidden_states):
+
+        input_dtype = hidden_states.dtype
+        hidden_states = hidden_states.to(torch.float32)
+        # 计算了输入hidden_states的平方的均值
+        variance = hidden_states.pow(2).mean(-1, keepdim=True)
+        # torch.rsqrt是平方根的倒数，这样就得到了RMSNorm的分母部分，再加上eps防止分母为0
+        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+        hidden_states = self.weight * hidden_states.to(input_dtype)
+
+        return hidden_states
+
+    def extra_repr(self):
+        return f"{tuple(self.weight.shape)}, eps={self.variance_epsilon}"
 
