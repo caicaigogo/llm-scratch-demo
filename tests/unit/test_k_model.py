@@ -12,7 +12,8 @@ from llm_scratch.k_model import (
     ModelConfig,
     RMSNorm,
     Attention,
-    MLP
+    MLP,
+    DecoderLayer
 )
 from utils.path import find_project_root_with_tests
 
@@ -174,7 +175,7 @@ class TestTransformer(unittest.TestCase):
         # )
         self_attn = Attention(config=self.config)
 
-        # input_hidden_states shape  torch.Size([1,43, 896])
+        # input_hidden_states shape  torch.Size([1, 43, 896])
         input_hidden_states = self.inputs_embeds
 
         # cos_emb shape  torch.Size([32768, 32])
@@ -185,7 +186,12 @@ class TestTransformer(unittest.TestCase):
         sin_emb = self.sin_emb
         print('register sin_emb shape ', sin_emb.shape)
 
-        attn_output = self_attn(input_hidden_states, cos_emb, sin_emb, casual_mask=self.causal_mask)
+        # causal_mask shape  torch.Size([1, 1, 32768, 32768])
+        causal_mask = self.causal_mask
+        print('register causal_mask shape ', causal_mask.shape)
+
+        # attn_output shape  torch.Size([1, 43, 896])
+        attn_output = self_attn(input_hidden_states, cos_emb, sin_emb, casual_mask=causal_mask)
         print('attn_output shape ', attn_output.shape)
 
     def test_MLP(self):
@@ -202,3 +208,38 @@ class TestTransformer(unittest.TestCase):
         # mlp_output shape  torch.Size([1, 43, 896])
         mlp_output = mlp(input_hidden_states)
         print('mlp_output shape ', mlp_output.shape)
+
+    def test_DecoderLayer(self):
+        # DecoderLayer(
+        #   (self_attn): Attention(
+        #     (q_proj): Linear(in_features=896, out_features=896, bias=False)
+        #     (k_proj): Linear(in_features=896, out_features=128, bias=False)
+        #     (v_proj): Linear(in_features=896, out_features=128, bias=False)
+        #     (o_proj): Linear(in_features=896, out_features=896, bias=False)
+        #   )
+        #   (mlp): MLP(
+        #     (gate_proj): Linear(in_features=896, out_features=4864, bias=False)
+        #     (up_proj): Linear(in_features=896, out_features=4864, bias=False)
+        #     (down_proj): Linear(in_features=4864, out_features=896, bias=False)
+        #     (act_fn): SiLU()
+        #   )
+        #   (input_layernorm): RMSNorm((896,), eps=1e-06)
+        #   (post_attention_layernorm): RMSNorm((896,), eps=1e-06)
+        # )
+
+        decoder_layer = DecoderLayer(config=self.config, layer_idx=0)
+
+        # input_hidden_states shape  torch.Size([1,43, 896])
+        input_hidden_states = self.inputs_embeds
+
+        # cos_emb shape  torch.Size([32768, 32])
+        cos_emb = self.cos_emb
+
+        # sin_emb shape  torch.Size([32768, 32])
+        sin_emb = self.sin_emb
+
+        # causal_mask shape  torch.Size([1, 1, 32768, 32768])
+        causal_mask = self.causal_mask
+
+        # decoder_layer_output shape  torch.Size([1,43, 896]
+        decoder_layer_output = decoder_layer(input_hidden_states, cos_emb, sin_emb, causal_mask)

@@ -16,8 +16,6 @@ class ModelConfig(PretrainedConfig):
             intermediate_size: int = None,
             rms_norm_eps: float = 1e-5,
             max_position_embeddings: int = 512,
-            dropout: float = 0.0,
-            flash_attn: bool = True,
             rope_theta: float = 10000.0,
             **kwargs,
     ):
@@ -206,8 +204,11 @@ class Attention(nn.Module):
 
 
     def forward(
-            self, hidden_states: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor,
-            casual_mask: torch.Tensor
+        self,
+        hidden_states: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+        casual_mask: torch.Tensor
     ):
         # 获取批次大小和序列长度，[batch_size, seq_len, hidden_size]
 
@@ -270,3 +271,41 @@ class MLP(nn.Module):
     def forward(self, x):
         down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
         return down_proj
+
+
+class DecoderLayer(nn.Module):
+    def __init__(self, config, layer_idx: int):
+        super().__init__()
+        self.hidden_size = config.hidden_size
+        self.self_attn = Attention(config=config)
+        self.mlp = MLP(config)
+        self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.attention_type = config.layer_types[layer_idx]
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        freqs_cos: torch.Tensor,
+        freqs_sin: torch.Tensor,
+        casual_mask: torch.Tensor
+    ):
+        # Self Attention
+        residual = hidden_states
+        hidden_states = self.input_layernorm(hidden_states)
+
+        hidden_states = self.self_attn(
+            hidden_states=hidden_states,
+            freqs_cos=freqs_cos,
+            freqs_sin=freqs_sin,
+            casual_mask=casual_mask
+        )
+        hidden_states = residual + hidden_states
+
+        # Fully Connected
+        residual = hidden_states
+        hidden_states = self.post_attention_layernorm(hidden_states)
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = residual + hidden_states
+
+        return hidden_states
