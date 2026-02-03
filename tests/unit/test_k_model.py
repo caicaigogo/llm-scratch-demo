@@ -9,7 +9,8 @@ from llm_scratch.k_model import (
     precompute_freq_cos_sin,
     RMSNorm,
     Attention,
-    apply_rotary_pos_emb
+    apply_rotary_pos_emb,
+    repeat_kv
 )
 from utils.path import find_project_root_with_tests
 
@@ -131,6 +132,29 @@ class TestTransformer(unittest.TestCase):
         rotary_hidden_states = apply_rotary_pos_emb(transpose_states, cos_emb, sin_emb)
         print('rotary_hidden_states shape ', rotary_hidden_states.shape)
 
+    def test_repeat_kv(self):
+
+        # input_hidden_states shape  torch.Size([1,43, 896])
+        input_hidden_states = self.inputs_embeds
+        input_shape = input_hidden_states.shape[:-1]
+        # (batch_size, seq_len, -1, head_dim)
+        hidden_shape = (*input_shape, -1, self.head_dim)
+
+        key_states = input_hidden_states[:, :, :self.head_dim * self.config.num_key_value_heads]
+
+        # (batch_size, num_key_value_heads, seq_len, head_dim)
+        # transpose_states shape  torch.Size([1, 2, 43, 64])
+        transpose_states = key_states.view(hidden_shape).transpose(1, 2)
+        print('transpose_states shape ', transpose_states.shape)
+
+        # num_key_value_groups is  7
+        num_key_value_groups = self.config.num_attention_heads // self.config.num_key_value_heads
+        print('num_key_value_groups ', num_key_value_groups)
+
+        # expand_key_states shape  torch.Size([1, 14, 43, 64])
+        expand_key_states = repeat_kv(transpose_states, n_rep=num_key_value_groups)
+        print('expand_key_states shape ', expand_key_states.shape)
+
     def test_Attention(self):
         # Attention(
         #   (q_proj): Linear(in_features=896, out_features=896, bias=False)
@@ -139,4 +163,16 @@ class TestTransformer(unittest.TestCase):
         #   (o_proj): Linear(in_features=896, out_features=896, bias=False)
         # )
         self_attn = Attention(config=self.config)
-        print(self_attn)
+
+        # input_hidden_states shape  torch.Size([1,43, 896])
+        input_hidden_states = self.inputs_embeds
+
+        # cos_emb shape  torch.Size([32768, 32])
+        cos_emb = self.cos_emb
+        print('register cos_emb shape ', cos_emb.shape)
+
+        # sin_emb shape  torch.Size([32768, 32])
+        sin_emb = self.sin_emb
+        print('register sin_emb shape ', sin_emb.shape)
+
+        self_attn(input_hidden_states, cos_emb, sin_emb)
