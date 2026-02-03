@@ -19,8 +19,8 @@ class TestTransformer(unittest.TestCase):
     def setUp(self):
         project_root = find_project_root_with_tests()
         os.chdir(project_root)
-        model_type = 'Tiny-K'
-        # model_type = 'qwen2'
+        # model_type = 'Tiny-K'
+        model_type = 'qwen2'
         if model_type == 'Tiny-K':
             self.config = ModelConfig()
             self.embed_tokens = nn.Embedding(
@@ -56,22 +56,22 @@ class TestTransformer(unittest.TestCase):
             {"role": "user", "content": "I'm good too."},
         ]
 
-        print("\n=== 聊天模板测试 ===")
+        # print("\n=== 聊天模板测试 ===")
         prompt = tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=False
         )
-        print("Generated prompt:\n", prompt, sep="")
+        # print("Generated prompt:\n", prompt, sep="")
 
+        # len(input_ids) -> [44]
         input_ids = tokenizer(prompt).data['input_ids']
-        # torch.Size([1, 43])
         self.input_ids = torch.tensor(input_ids[:-1]).unsqueeze(0)
         # torch.Size([1, 43])
-        print('input_ids shape ', self.input_ids.shape)
+        # print('input_ids shape ', self.input_ids.shape)
 
         self.inputs_embeds = self.embed_tokens(self.input_ids)
-        print('inputs_embeds shape ', self.inputs_embeds.shape)
+        # print('inputs_embeds shape ', self.inputs_embeds.shape)
 
     def test_embed_tokens(self):
         # Embedding(151936, 896)
@@ -134,8 +134,8 @@ class TestTransformer(unittest.TestCase):
     def test_Attention(self):
         # Attention(
         #   (q_proj): Linear(in_features=896, out_features=896, bias=False)
-        #   (k_proj): Linear(in_features=768, out_features=128, bias=False)
-        #   (v_proj): Linear(in_features=768, out_features=128, bias=False)
+        #   (k_proj): Linear(in_features=896, out_features=128, bias=False)
+        #   (v_proj): Linear(in_features=896, out_features=128, bias=False)
         #   (o_proj): Linear(in_features=896, out_features=896, bias=False)
         # )
         self_attn = Attention(config=self.config)
