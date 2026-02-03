@@ -13,8 +13,7 @@ class ModelConfig(PretrainedConfig):
             num_attention_heads: int = 16,
             num_key_value_heads: int = 8,
             vocab_size: int = 6144,
-            hidden_dim: int = None,
-            multiple_of: int = 64,
+            intermediate_size: int = None,
             rms_norm_eps: float = 1e-5,
             max_position_embeddings: int = 512,
             dropout: float = 0.0,
@@ -27,7 +26,7 @@ class ModelConfig(PretrainedConfig):
         self.num_attention_heads = num_attention_heads
         self.num_key_value_heads = num_key_value_heads
         self.vocab_size = vocab_size
-        self.hidden_dim = hidden_dim
+        self.intermediate_size = intermediate_size
         self.multiple_of = multiple_of
         self.rms_norm_eps = rms_norm_eps
         self.max_position_embeddings = max_position_embeddings
@@ -255,3 +254,19 @@ class Attention(nn.Module):
         attn_output = self.o_proj(attn_output)
 
         return attn_output
+
+
+class MLP(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.hidden_size = config.hidden_size
+        self.intermediate_size = config.intermediate_size
+        self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
+        self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
+        self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False)
+        self.act_fn = nn.SiLU()
+
+    def forward(self, x):
+        down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+        return down_proj

@@ -5,13 +5,14 @@ import unittest
 from transformers import AutoTokenizer, AutoConfig
 
 from llm_scratch.k_model import (
-    ModelConfig,
     precompute_freq_cos_sin,
-    RMSNorm,
-    Attention,
     apply_rotary_pos_emb,
     repeat_kv,
-    precompute_causal_mask
+    precompute_causal_mask,
+    ModelConfig,
+    RMSNorm,
+    Attention,
+    MLP
 )
 from utils.path import find_project_root_with_tests
 
@@ -186,3 +187,18 @@ class TestTransformer(unittest.TestCase):
 
         attn_output = self_attn(input_hidden_states, cos_emb, sin_emb, casual_mask=self.causal_mask)
         print('attn_output shape ', attn_output.shape)
+
+    def test_MLP(self):
+        # MLP(
+        #   (gate_proj): Linear(in_features=896, out_features=4864, bias=False)
+        #   (up_proj): Linear(in_features=896, out_features=4864, bias=False)
+        #   (down_proj): Linear(in_features=4864, out_features=896, bias=False)
+        # )
+
+        mlp = MLP(config=self.config)
+        # input_hidden_states shape  torch.Size([1,43, 896])
+        input_hidden_states = self.inputs_embeds
+
+        # mlp_output shape  torch.Size([1, 43, 896])
+        mlp_output = mlp(input_hidden_states)
+        print('mlp_output shape ', mlp_output.shape)
