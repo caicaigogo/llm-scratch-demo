@@ -10,7 +10,8 @@ from llm_scratch.k_model import (
     RMSNorm,
     Attention,
     apply_rotary_pos_emb,
-    repeat_kv
+    repeat_kv,
+    precompute_causal_mask
 )
 from utils.path import find_project_root_with_tests
 
@@ -48,6 +49,8 @@ class TestTransformer(unittest.TestCase):
         cos_emb, sin_emb = precompute_freq_cos_sin(self.head_dim, self.config.max_position_embeddings)
         self.cos_emb = cos_emb
         self.sin_emb = sin_emb
+
+        self.causal_mask = precompute_causal_mask(self.config.max_position_embeddings)
 
         # 测试聊天模板
         messages = [
@@ -155,6 +158,12 @@ class TestTransformer(unittest.TestCase):
         expand_key_states = repeat_kv(transpose_states, n_rep=num_key_value_groups)
         print('expand_key_states shape ', expand_key_states.shape)
 
+    def test_precompute_causal_mask(self):
+
+        # float32
+        # precompute_causal_mask(self.config.max_position_embeddings, self.inputs_embeds.dtype)
+        precompute_causal_mask(5, self.inputs_embeds.dtype)
+
     def test_Attention(self):
         # Attention(
         #   (q_proj): Linear(in_features=896, out_features=896, bias=False)
@@ -175,4 +184,5 @@ class TestTransformer(unittest.TestCase):
         sin_emb = self.sin_emb
         print('register sin_emb shape ', sin_emb.shape)
 
-        self_attn(input_hidden_states, cos_emb, sin_emb)
+        attn_output = self_attn(input_hidden_states, cos_emb, sin_emb, casual_mask=self.causal_mask)
+        print('attn_output shape ', attn_output.shape)

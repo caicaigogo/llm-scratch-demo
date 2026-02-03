@@ -116,6 +116,55 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
 
 
+def eager_attention_forward(
+    module: nn.Module,
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    casual_mask,
+    scaling: float,
+):
+    seq_len = query.shape[2]
+
+    key_states = repeat_kv(key, module.num_key_value_groups)
+    value_states = repeat_kv(value, module.num_key_value_groups)
+
+    # (batch_size, num_attention_heads, seq_len, head_dim)
+    # -> (batch_size, num_attention_heads, seq_len, seq_len)
+    attn_weights = torch.matmul(query, key_states.transpose(2, 3)) * scaling
+    # 右上角部分为很大的负数，中间线及左下角为正常值
+    attn_weights = attn_weights + casual_mask[:, :, :seq_len, :seq_len]
+
+    # (batch_size, num_attention_heads, seq_len, seq_len)
+    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query.dtype)
+    # (batch_size, num_attention_heads, seq_len, seq_len)
+    # -> (batch_size, num_attention_heads, seq_len, head_dim)
+    attn_output = torch.matmul(attn_weights, value_states)
+    # (batch_size, seq_len, num_attention_heads, head_dim)
+    attn_output = attn_output.transpose(1, 2).contiguous()
+
+    return attn_output
+
+
+def precompute_causal_mask(max_seq_len: int, dtype=None):
+
+    if dtype is None:
+        dtype = torch.float16
+
+    # 创建一个上三角矩阵，用于遮蔽未来信息。
+    # torch.Size([1, 1, 32768, 32768])
+    mask = torch.full((1, 1, max_seq_len, max_seq_len), torch.finfo(dtype).min)
+    # 实心部分是0， 空心部分是 最小负数
+    # 0 ■ ⬚ ⬚ ⬚ ⬚
+    # 1 ■ ■ ⬚ ⬚ ⬚
+    # 2 ■ ■ ■ ⬚ ⬚
+    # 3 ■ ■ ■ ■ ⬚
+    # 4 ■ ■ ■ ■ ■
+    causal_mask = torch.triu(mask, diagonal=1)
+
+    return causal_mask
+
+
 class RMSNorm(nn.Module):
 
     def __init__(self, hidden_size: int, eps: float = 1e-6):
@@ -151,15 +200,17 @@ class Attention(nn.Module):
         self.scaling = self.head_dim ** -0.5
         self.is_causal = True
 
-
         self.q_proj = nn.Linear(config.hidden_size, config.num_attention_heads * self.head_dim, bias=False)
         self.k_proj = nn.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=False)
         self.v_proj = nn.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=False)
         self.o_proj = nn.Linear(config.num_attention_heads * self.head_dim, config.hidden_size, bias=False)
 
 
-    def forward(self, hidden_states: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor):
-        # 获取批次大小和序列长度，[batch_size, seq_len, dim]
+    def forward(
+            self, hidden_states: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor,
+            casual_mask: torch.Tensor
+    ):
+        # 获取批次大小和序列长度，[batch_size, seq_len, hidden_size]
 
         # (batch_size, seq_len)
         input_shape = hidden_states.shape[:-1]
@@ -193,4 +244,14 @@ class Attention(nn.Module):
         print('rotatry query_states shape', query_states.shape)
         print('rotatry key_states shape', key_states.shape)
 
+        # (batch_size, seq_len, num_attention_heads, head_dim)
+        attn_output = eager_attention_forward(
+            self, query_states, key_states, value_states, scaling=self.scaling, casual_mask=casual_mask
+        )
 
+        # (batch_size, seq_len, hidden_size)
+        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+        # (batch_size, seq_len, hidden_size)
+        attn_output = self.o_proj(attn_output)
+
+        return attn_output
