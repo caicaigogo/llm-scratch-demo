@@ -7,7 +7,9 @@ from transformers import AutoTokenizer, AutoConfig
 from llm_scratch.k_model import (
     ModelConfig,
     precompute_freq_cos_sin,
-    RMSNorm
+    RMSNorm,
+    Attention,
+    apply_rotary_pos_emb
 )
 from utils.path import find_project_root_with_tests
 
@@ -17,8 +19,8 @@ class TestTransformer(unittest.TestCase):
     def setUp(self):
         project_root = find_project_root_with_tests()
         os.chdir(project_root)
-        # model_type = 'Tiny-K'
-        model_type = 'qwen2'
+        model_type = 'Tiny-K'
+        # model_type = 'qwen2'
         if model_type == 'Tiny-K':
             self.config = ModelConfig()
             self.embed_tokens = nn.Embedding(
@@ -41,6 +43,10 @@ class TestTransformer(unittest.TestCase):
 
         self.head_dim = getattr(self.config, "head_dim", self.config.hidden_size // self.config.num_attention_heads)
         self.rms_norm_eps = getattr(self.config, "rms_norm_eps", None)
+
+        cos_emb, sin_emb = precompute_freq_cos_sin(self.head_dim, self.config.max_position_embeddings)
+        self.cos_emb = cos_emb
+        self.sin_emb = sin_emb
 
         # 测试聊天模板
         messages = [
@@ -77,10 +83,10 @@ class TestTransformer(unittest.TestCase):
 
     def test_precompute_freq_cos_sin(self):
 
-        cos_emb, sin_emb = precompute_freq_cos_sin(self.head_dim, self.input_ids.shape[1])
-        # torch.Size([43, 32])
+        cos_emb, sin_emb = precompute_freq_cos_sin(self.head_dim, self.config.max_position_embeddings)
+        # torch.Size([32768, 32])
         print('cos_emb shape ', cos_emb.shape)
-        # torch.Size([43, 32])
+        # torch.Size([32768, 32])
         print('sin_emb shape ', sin_emb.shape)
 
     def test_RMSNorm(self):
@@ -99,3 +105,38 @@ class TestTransformer(unittest.TestCase):
         output_hidden_states = norm(input_hidden_states)
         print('output_hidden_states shape ', output_hidden_states.shape)
 
+    def test_apply_rotary_pos_emb(self):
+
+        # input_hidden_states shape  torch.Size([1,43, 896])
+        input_hidden_states = self.inputs_embeds
+        input_shape = input_hidden_states.shape[:-1]
+        batch_size, seq_len = input_shape
+        # (batch_size, seq_len, -1, head_dim)
+        hidden_shape = (*input_shape, -1, self.head_dim)
+
+        # (batch_size, heads, seq_len, head_dim)
+        # transpose_states shape  torch.Size([1, 14, 43, 64])
+        transpose_states = input_hidden_states.view(hidden_shape).transpose(1, 2)
+        print('transpose_states shape ', transpose_states.shape)
+
+        # cos_emb shape  torch.Size([43, 32])
+        cos_emb = self.cos_emb[:seq_len]
+        print('cos_emb shape ', cos_emb.shape)
+
+        # sin_emb shape  torch.Size([43, 32])
+        sin_emb = self.sin_emb[:seq_len]
+        print('sin_emb shape ', sin_emb.shape)
+
+        # rotary_hidden_states shape  torch.Size([1, 14, 43, 64])
+        rotary_hidden_states = apply_rotary_pos_emb(transpose_states, cos_emb, sin_emb)
+        print('rotary_hidden_states shape ', rotary_hidden_states.shape)
+
+    def test_Attention(self):
+        # Attention(
+        #   (q_proj): Linear(in_features=896, out_features=896, bias=False)
+        #   (k_proj): Linear(in_features=768, out_features=128, bias=False)
+        #   (v_proj): Linear(in_features=768, out_features=128, bias=False)
+        #   (o_proj): Linear(in_features=896, out_features=896, bias=False)
+        # )
+        self_attn = Attention(config=self.config)
+        print(self_attn)
