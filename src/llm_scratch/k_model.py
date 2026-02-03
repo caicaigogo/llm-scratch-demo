@@ -156,3 +156,41 @@ class Attention(nn.Module):
         self.k_proj = nn.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=False)
         self.v_proj = nn.Linear(config.hidden_size, config.num_key_value_heads * self.head_dim, bias=False)
         self.o_proj = nn.Linear(config.num_attention_heads * self.head_dim, config.hidden_size, bias=False)
+
+
+    def forward(self, hidden_states: torch.Tensor, freqs_cos: torch.Tensor, freqs_sin: torch.Tensor):
+        # 获取批次大小和序列长度，[batch_size, seq_len, dim]
+
+        # (batch_size, seq_len)
+        input_shape = hidden_states.shape[:-1]
+        batch_size, seq_len = input_shape
+
+        # (batch_size, seq_len, -1, head_dim)
+        hidden_shape = (*input_shape, -1, self.head_dim)
+        # query
+        # (batch_size, seq_len, hidden_size)
+        # -> (batch_size, seq_len, hidden_size)
+        # -> (batch_size, seq_len, num_attention_heads, head_dim)
+        # -> (batch_size, num_attention_heads, seq_len, head_dim)
+        query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        # k-value
+        # (batch_size, seq_len, hidden_size)
+        # -> (batch_size, seq_len, num_key_value_heads * head_dim)
+        # -> (batch_size, seq_len, num_key_value_heads, head_dim)
+        # -> (batch_size, num_key_value_heads, seq_len, head_dim)
+        key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+        value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+
+        # -> (seq_len, head_dim //2)
+        cos_emb = freqs_cos[:seq_len]
+        sin_emb = freqs_sin[:seq_len]
+        print('cos_emb shape', cos_emb.shape)
+        print('sin_emb shape', sin_emb.shape)
+
+        query_states = apply_rotary_pos_emb(query_states, cos_emb, sin_emb)
+        key_states = apply_rotary_pos_emb(key_states, cos_emb, sin_emb)
+
+        print('rotatry query_states shape', query_states.shape)
+        print('rotatry key_states shape', key_states.shape)
+
+
