@@ -13,7 +13,8 @@ from llm_scratch.k_model import (
     RMSNorm,
     Attention,
     MLP,
-    DecoderLayer
+    DecoderLayer,
+    LLaMAModel
 )
 from utils.path import find_project_root_with_tests
 
@@ -27,23 +28,17 @@ class TestTransformer(unittest.TestCase):
         model_type = 'qwen2'
         if model_type == 'Tiny-K':
             self.config = ModelConfig()
-            self.embed_tokens = nn.Embedding(
-                num_embeddings=self.config.vocab_size,
-                embedding_dim=self.config.hidden_size
-            )
             tokenizer = AutoTokenizer.from_pretrained("tokenizer_k")
-
         elif model_type == 'qwen2':
             self.config = AutoConfig.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct")
-            self.embed_tokens = nn.Embedding(
-                num_embeddings=self.config.vocab_size,
-                embedding_dim=self.config.hidden_size,
-                padding_idx=self.config.pad_token_id  # null
-            )
-
             tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct")
         else:
             raise(Exception('no support model_type {}'.format(model_type)))
+
+        self.embed_tokens = nn.Embedding(
+            num_embeddings=self.config.vocab_size,
+            embedding_dim=self.config.hidden_size
+        )
 
         self.head_dim = getattr(self.config, "head_dim", self.config.hidden_size // self.config.num_attention_heads)
         self.rms_norm_eps = getattr(self.config, "rms_norm_eps", None)
@@ -243,3 +238,38 @@ class TestTransformer(unittest.TestCase):
 
         # decoder_layer_output shape  torch.Size([1,43, 896]
         decoder_layer_output = decoder_layer(input_hidden_states, cos_emb, sin_emb, causal_mask)
+        print('decoder_layer_output shape ', decoder_layer_output.shape)
+
+    def test_LLaMAModel(self):
+
+        # LLaMAModel(
+        #   (embed_tokens): Embedding(151936, 896)
+        #   (layers): ModuleList(
+        #     (0-23): 24 x DecoderLayer(
+        #       (self_attn): Attention(
+        #         (q_proj): Linear(in_features=896, out_features=896, bias=False)
+        #         (k_proj): Linear(in_features=896, out_features=128, bias=False)
+        #         (v_proj): Linear(in_features=896, out_features=128, bias=False)
+        #         (o_proj): Linear(in_features=896, out_features=896, bias=False)
+        #       )
+        #       (mlp): MLP(
+        #         (gate_proj): Linear(in_features=896, out_features=4864, bias=False)
+        #         (up_proj): Linear(in_features=896, out_features=4864, bias=False)
+        #         (down_proj): Linear(in_features=4864, out_features=896, bias=False)
+        #         (act_fn): SiLU()
+        #       )
+        #       (input_layernorm): RMSNorm((896,), eps=1e-06)
+        #       (post_attention_layernorm): RMSNorm((896,), eps=1e-06)
+        #     )
+        #   )
+        #   (norm): RMSNorm((896,), eps=1e-06)
+        # )
+        llama_model = LLaMAModel(config=self.config)
+
+        # input_ids shape  torch.Size([1, 99])
+        input_ids = self.input_ids
+
+        # model_output shape  torch.Size([1,43, 896]
+
+        model_output = llama_model(input_ids)
+        print('model_output shape ', model_output.shape)

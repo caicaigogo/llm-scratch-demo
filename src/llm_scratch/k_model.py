@@ -1,4 +1,4 @@
-from transformers import PretrainedConfig
+from transformers import PretrainedConfig, PreTrainedModel
 import torch
 from torch import nn
 
@@ -9,27 +9,24 @@ class ModelConfig(PretrainedConfig):
     def __init__(
             self,
             hidden_size: int = 768,
-            n_layers: int = 12,
+            num_hidden_layers: int = 12,
             num_attention_heads: int = 16,
             num_key_value_heads: int = 8,
             vocab_size: int = 6144,
-            intermediate_size: int = None,
+            intermediate_size: int = 3072,
             rms_norm_eps: float = 1e-5,
             max_position_embeddings: int = 512,
             rope_theta: float = 10000.0,
             **kwargs,
     ):
         self.hidden_size = hidden_size
-        self.n_layers = n_layers
+        self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
         self.num_key_value_heads = num_key_value_heads
         self.vocab_size = vocab_size
         self.intermediate_size = intermediate_size
-        self.multiple_of = multiple_of
         self.rms_norm_eps = rms_norm_eps
         self.max_position_embeddings = max_position_embeddings
-        self.dropout = dropout
-        self.flash_attn = flash_attn
         self.rope_theta = rope_theta
         super().__init__(**kwargs)
 
@@ -281,7 +278,6 @@ class DecoderLayer(nn.Module):
         self.mlp = MLP(config)
         self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
         self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.attention_type = config.layer_types[layer_idx]
 
     def forward(
         self,
@@ -307,5 +303,46 @@ class DecoderLayer(nn.Module):
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
+
+        return hidden_states
+
+from transformers.models.qwen2 import Qwen2Model
+
+class LLaMAModel(PreTrainedModel):
+
+    def __init__(self, config: PretrainedConfig):
+        super().__init__(config)
+
+        head_dim = getattr(self.config, "head_dim", self.config.hidden_size // self.config.num_attention_heads)
+
+        self.embed_tokens = nn.Embedding(
+            num_embeddings=self.config.vocab_size,
+            embedding_dim=self.config.hidden_size,
+        )
+
+        self.layers = nn.ModuleList(
+            [DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+        )
+        self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+
+        freqs_cos, freqs_sin = precompute_freq_cos_sin(head_dim, self.config.max_position_embeddings)
+        self.register_buffer("freqs_cos", freqs_cos, persistent=False)
+        self.register_buffer("freqs_sin", freqs_sin, persistent=False)
+
+        causal_mask = precompute_causal_mask(self.config.max_position_embeddings)
+        self.register_buffer("causal_mask", causal_mask, persistent=False)
+
+    def forward(
+        self,
+        input_ids
+    ):
+
+        inputs_embeds = self.embed_tokens(input_ids)
+        hidden_states = inputs_embeds
+
+        for decoder_layer in self.layers[: self.config.num_hidden_layers]:
+            hidden_states = decoder_layer(hidden_states, self.freqs_cos, self.freqs_sin, self.causal_mask)
+
+        hidden_states = self.norm(hidden_states)
 
         return hidden_states
