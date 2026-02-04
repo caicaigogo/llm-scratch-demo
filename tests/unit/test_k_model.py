@@ -24,8 +24,8 @@ class TestTransformer(unittest.TestCase):
     def setUp(self):
         project_root = find_project_root_with_tests()
         os.chdir(project_root)
-        # model_type = 'Tiny-K'
-        model_type = 'qwen2'
+        model_type = 'Tiny-K'
+        # model_type = 'qwen2'
         if model_type == 'Tiny-K':
             self.config = ModelConfig()
             tokenizer = AutoTokenizer.from_pretrained("tokenizer_k")

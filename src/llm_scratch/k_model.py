@@ -232,14 +232,9 @@ class Attention(nn.Module):
         # -> (seq_len, head_dim //2)
         cos_emb = freqs_cos[:seq_len]
         sin_emb = freqs_sin[:seq_len]
-        print('cos_emb shape', cos_emb.shape)
-        print('sin_emb shape', sin_emb.shape)
 
         query_states = apply_rotary_pos_emb(query_states, cos_emb, sin_emb)
         key_states = apply_rotary_pos_emb(key_states, cos_emb, sin_emb)
-
-        print('rotatry query_states shape', query_states.shape)
-        print('rotatry key_states shape', key_states.shape)
 
         # (batch_size, seq_len, num_attention_heads, head_dim)
         attn_output = eager_attention_forward(
@@ -306,7 +301,6 @@ class DecoderLayer(nn.Module):
 
         return hidden_states
 
-from transformers.models.qwen2 import Qwen2Model
 
 class LLaMAModel(PreTrainedModel):
 
