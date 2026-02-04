@@ -11,7 +11,9 @@ from llm_scratch.k_model import (
 
 from llm_scratch.moe_model import (
     ModelConfig,
-    MLA
+    MLA,
+    MoE,
+    Gate
 )
 from utils.path import find_project_root_with_tests
 
@@ -100,3 +102,19 @@ class TestDeepSeek(unittest.TestCase):
         # mla_output shape  torch.Size([1, 43, 896])
         mla_output = mla(input_hidden_states, cos_emb, sin_emb, casual_mask=causal_mask)
         print('mla_output shape ', mla_output.shape)
+
+    def test_Gate(self):
+
+        # Gate()
+        gate = Gate(config=self.config)
+        print(gate)
+
+        # all_token_emb shape  torch.Size([99, 768])
+        all_token_emb = self.inputs_embeds.view(-1, self.config.hidden_size)
+        print('all_token_emb shape ', all_token_emb.shape)
+
+        # top_k_expert_weights shape  torch.Size([99, 6])
+        # top_k_expert_indices shape  torch.Size([99, 6])
+        top_k_expert_weights, top_k_expert_indices = gate(all_token_emb)
+        print('top_k_expert_weights shape ', top_k_expert_weights.shape)
+        print('top_k_expert_indices shape ', top_k_expert_indices.shape)
