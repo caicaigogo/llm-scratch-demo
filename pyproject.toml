@@ -13,6 +13,12 @@ dependencies = [
     "torch"
 ]
 
+[project.optional-dependencies]
+# 搜索功能依赖
+train = [
+    "swanlab"
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["llm_scratch*"]
