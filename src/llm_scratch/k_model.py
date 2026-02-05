@@ -27,6 +27,7 @@ class ModelConfig(PretrainedConfig):
         self.intermediate_size = intermediate_size
         self.rms_norm_eps = rms_norm_eps
         self.max_position_embeddings = max_position_embeddings
+        self.max_seq_len = max_position_embeddings
         self.rope_theta = rope_theta
         super().__init__(**kwargs)
 
@@ -382,14 +383,83 @@ class LLaMAForCausalLM(PreTrainedModel):
 
         if targets is not None:
             # 如果给定了目标，计算损失
-            # (batch_size, seq_len, hidden_size)
-            # -> (batch_size, seq_len, hidden_size)
+            # (batch_size, seq_len, vocab_size)
+            # -> (batch_size, seq_len, vocab_size)
             vocab_logits = self.lm_head(hidden_states)
         else:
             # (batch_size, seq_len, hidden_size)
-            # -> (batch_size, 1, hidden_size)
-            # -> (batch_size, 1, hidden_size)
-            vocab_logits = self.lm_head(hidden_states)
+            # -> (batch_size, 1, vocab_size)
+            # -> (batch_size, 1, vocab_size)
             # 推理时的小优化：只对最后一个位置的输出进行前向传播
             vocab_logits = self.lm_head(hidden_states[:, [-1], :])
         return vocab_logits
+
+    @torch.inference_mode()
+    def generate(self, input_ids, stop_id=None, max_new_tokens=256, temperature=1.0, top_k=2):
+        """
+        给定输入序列 input_ids（形状为 (bz,seq_len) 的长整型张量），通过多次生成新 token 来完成序列。
+        在 model.eval() 模式下运行。效率较低的采样版本，没有使用键k/v cache。
+        """
+
+        # (batch_size, seq_len)
+        # -> input_seq_len: int
+        input_seq_len = input_ids.shape[1]
+        for _ in range(max_new_tokens):
+            # 如果序列上下文过长，截断它到最大长度 , 确保  input_seq_len <= max_seq_len, 要么原来，要么从后往前截max_seq_len
+            # (batch_size, seq_len) or (batch_size, max_seq_len)
+            input_ids_cond = \
+                input_ids \
+                if input_ids.size(1) <= self.config.max_seq_len \
+                else input_ids[:, -self.config.max_seq_len:]
+
+            # 前向传播获取序列中最后一个位置的 logits
+            # (batch_size, seq_len)
+            # -> # (batch_size, 1, vocab_size)
+            logits = self(input_ids_cond)
+
+            # (batch_size, seq_len)
+            # -> # (batch_size, vocab_size)
+            logits = logits[:, -1, :] # 只保留最后一个时间步的输出
+            if temperature == 0.0:
+                # 选择最有可能的索引
+                # (batch_size, vocab_size)
+                # -> # (batch_size, 1)
+                _, next_token_id = torch.topk(logits, k=1, dim=-1)
+
+            else:
+                # 缩放 logits 并应用 softmax
+                # 温度越小，倍数越大，概率分布更两极化
+                # (batch_size, vocab_size)
+                logits = logits / temperature
+
+                # print(logits)
+                if top_k is not None:
+                    # (batch_size, vocab_size)
+                    # -> (batch_size, top_k)
+                    # 取topk的logits
+                    topk_logits_value, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                    # logits: (batch_size, vocab_size)
+                    # topk_logits_value: (batch_size, top_k)
+                    # topk_logits_value[:, [-1]]: 取各个batch_size能筛选的最小概率值 -> (batch_size, 1)
+                    # logits < topk_logits_value[:, [-1]]]: 广播后取得 bool的Tensor： 小于的需要mask的为True，需要保留的为原值
+                    # ->  (batch_size, vocab_size)
+                    # logits[logits < topk_logits_value[:, [-1]]] : 取cond 为True，即需要mask的 logits的值
+                    # 这里的话，得到的1维度的向量，长度为 (batch_size * (vocab_size - top_k))
+                    # mask, 将不再topk的概率值赋 负无穷
+                    logits[logits < topk_logits_value[:, [-1]]] = -float('Inf')
+
+                    # (batch_size, vocab_size)
+                    probs = nn.functional.softmax(logits, dim=-1)
+                    # 抽样最有可能的索引
+                    # (batch_size, vocab_size)
+                    # -> (batch_size, 1)
+                    next_token_id = torch.multinomial(probs, num_samples=1)
+
+            if next_token_id == stop_id:
+                break
+            # 将采样的索引添加到序列中并继续
+            # (batch_size, seq_len)
+            # -> (batch_size, seq_len + 1)
+            input_ids = torch.cat((input_ids, next_token_id), dim=1)
+
+        return input_ids[:, input_seq_len:]  # 只返回生成的token

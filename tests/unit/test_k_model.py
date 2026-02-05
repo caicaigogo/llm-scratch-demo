@@ -333,6 +333,17 @@ class TestTransformer(unittest.TestCase):
         input_ids = self.input_ids
         print('input_ids shape ', input_ids.shape)
 
-        # model_output shape  torch.Size([1, 1, 6144])
+        # casual_lm_output shape  torch.Size([1, 1, 6144])
         casual_lm_output = casual_lm(input_ids)
+        print('casual_lm_output shape ', casual_lm_output.shape)
+
+    def test_generate(self):
+
+        casual_lm = LLaMAForCausalLM(config=self.config)
+        # input_ids shape  torch.Size([1, 99])
+        input_ids = self.input_ids
+        print('input_ids shape ', input_ids.shape)
+
+        # casual_lm_output shape  torch.Size([, 5])
+        casual_lm_output = casual_lm.generate(input_ids, max_new_tokens=5)
         print('casual_lm_output shape ', casual_lm_output.shape)
