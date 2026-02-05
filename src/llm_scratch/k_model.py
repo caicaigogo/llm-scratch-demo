@@ -370,3 +370,26 @@ class LLaMAForCausalLM(PreTrainedModel):
 
         # 初始化所有权重
         self.apply(init_weights)
+
+    def forward(
+        self,
+        input_ids,
+        targets = None
+    ):
+        # (batch_size, seq_len)
+        # -> (batch_size, seq_len, hidden_size)
+        hidden_states = self.model(input_ids)
+
+        if targets is not None:
+            # 如果给定了目标，计算损失
+            # (batch_size, seq_len, hidden_size)
+            # -> (batch_size, seq_len, hidden_size)
+            vocab_logits = self.lm_head(hidden_states)
+        else:
+            # (batch_size, seq_len, hidden_size)
+            # -> (batch_size, 1, hidden_size)
+            # -> (batch_size, 1, hidden_size)
+            vocab_logits = self.lm_head(hidden_states)
+            # 推理时的小优化：只对最后一个位置的输出进行前向传播
+            vocab_logits = self.lm_head(hidden_states[:, [-1], :])
+        return vocab_logits
