@@ -14,7 +14,8 @@ from llm_scratch.k_model import (
     Attention,
     MLP,
     DecoderLayer,
-    LLaMAModel
+    LLaMAModel,
+    LLaMAForCausalLM
 )
 from utils.path import find_project_root_with_tests
 
@@ -264,12 +265,70 @@ class TestTransformer(unittest.TestCase):
         #   )
         #   (norm): RMSNorm((896,), eps=1e-06)
         # )
-        llama_model = LLaMAModel(config=self.config)
 
+        # LLaMAModel(
+        #   (embed_tokens): Embedding(6144, 768)
+        #   (layers): ModuleList(
+        #     (0-11): 12 x DecoderLayer(
+        #       (self_attn): Attention(
+        #         (q_proj): Linear(in_features=768, out_features=768, bias=False)
+        #         (k_proj): Linear(in_features=768, out_features=384, bias=False)
+        #         (v_proj): Linear(in_features=768, out_features=384, bias=False)
+        #         (o_proj): Linear(in_features=768, out_features=768, bias=False)
+        #       )
+        #       (mlp): MLP(
+        #         (gate_proj): Linear(in_features=768, out_features=3072, bias=False)
+        #         (up_proj): Linear(in_features=768, out_features=3072, bias=False)
+        #         (down_proj): Linear(in_features=3072, out_features=768, bias=False)
+        #         (act_fn): SiLU()
+        #       )
+        #       (input_layernorm): RMSNorm((768,), eps=1e-05)
+        #       (post_attention_layernorm): RMSNorm((768,), eps=1e-05)
+        #     )
+        #   )
+        #   (norm): RMSNorm((768,), eps=1e-05)
+        # )
+
+        llama_model = LLaMAModel(config=self.config)
+        print(llama_model)
         # input_ids shape  torch.Size([1, 99])
         input_ids = self.input_ids
+        print('input_ids shape ', input_ids.shape)
 
-        # model_output shape  torch.Size([1,43, 896]
-
+        # model_output shape  torch.Size([1, 99, 768])
         model_output = llama_model(input_ids)
         print('model_output shape ', model_output.shape)
+
+    def test_LLaMAForCausalLM(self):
+
+        # LLaMAForCausalLM(
+        #   (model): LLaMAModel(
+        #     (embed_tokens): Embedding(6144, 768)
+        #     (layers): ModuleList(
+        #       (0-11): 12 x DecoderLayer(
+        #         (self_attn): Attention(
+        #           (q_proj): Linear(in_features=768, out_features=768, bias=False)
+        #           (k_proj): Linear(in_features=768, out_features=384, bias=False)
+        #           (v_proj): Linear(in_features=768, out_features=384, bias=False)
+        #           (o_proj): Linear(in_features=768, out_features=768, bias=False)
+        #         )
+        #         (mlp): MLP(
+        #           (gate_proj): Linear(in_features=768, out_features=3072, bias=False)
+        #           (up_proj): Linear(in_features=768, out_features=3072, bias=False)
+        #           (down_proj): Linear(in_features=3072, out_features=768, bias=False)
+        #           (act_fn): SiLU()
+        #         )
+        #         (input_layernorm): RMSNorm((768,), eps=1e-05)
+        #         (post_attention_layernorm): RMSNorm((768,), eps=1e-05)
+        #       )
+        #     )
+        #     (norm): RMSNorm((768,), eps=1e-05)
+        #   )
+        #   (lm_head): Linear(in_features=768, out_features=6144, bias=False)
+        # )
+
+        casual_lm = LLaMAForCausalLM(config=self.config)
+        print(casual_lm)
+        # input_ids shape  torch.Size([1, 99])
+        input_ids = self.input_ids
+        print('input_ids shape ', input_ids.shape)

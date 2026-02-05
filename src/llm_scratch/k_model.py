@@ -1,7 +1,7 @@
 from transformers import PretrainedConfig, PreTrainedModel
 import torch
 from torch import nn
-
+from transformers.models import Qwen2Model, Qwen2ForCausalLM
 
 class ModelConfig(PretrainedConfig):
     model_type = "Tiny-K"
@@ -158,6 +158,16 @@ def precompute_causal_mask(max_seq_len: int, dtype=None):
 
     return causal_mask
 
+def init_weights(
+    module: nn.Module
+):
+    # 初始化权重的函数
+    if isinstance(module, nn.Linear):
+        torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+        if module.bias is not None:
+            torch.nn.init.zeros_(module.bias)
+    elif isinstance(module, nn.Embedding):
+        torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
 class RMSNorm(nn.Module):
 
@@ -332,6 +342,9 @@ class LLaMAModel(PreTrainedModel):
         causal_mask = precompute_causal_mask(self.config.max_position_embeddings)
         self.register_buffer("causal_mask", causal_mask, persistent=False)
 
+        # 初始化所有权重
+        self.apply(init_weights)
+
     def forward(
         self,
         input_ids
@@ -346,3 +359,14 @@ class LLaMAModel(PreTrainedModel):
         hidden_states = self.norm(hidden_states)
 
         return hidden_states
+
+class LLaMAForCausalLM(PreTrainedModel):
+
+    def __init__(self, config: PretrainedConfig):
+        super().__init__(config)
+        self.model = LLaMAModel(config)
+        self.vocab_size = config.vocab_size
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+        # 初始化所有权重
+        self.apply(init_weights)
