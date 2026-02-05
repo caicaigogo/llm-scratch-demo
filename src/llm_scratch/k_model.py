@@ -250,11 +250,17 @@ class Attention(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config=None, hidden_size: int =None, intermediate_size: int = None):
         super().__init__()
         self.config = config
-        self.hidden_size = config.hidden_size
-        self.intermediate_size = config.intermediate_size
+        if hidden_size:
+            self.hidden_size = hidden_size
+        else:
+            self.hidden_size = config.hidden_size
+        if intermediate_size:
+            self.intermediate_size = intermediate_size
+        else:
+            self.intermediate_size = config.intermediate_size
         self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
         self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
         self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False)

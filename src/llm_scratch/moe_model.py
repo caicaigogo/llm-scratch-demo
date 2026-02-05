@@ -2,8 +2,8 @@ from transformers import PretrainedConfig, PreTrainedModel
 import torch
 from torch import nn
 import torch.nn.functional as F
-from llm_scratch.k_model import RMSNorm, apply_rotary_pos_emb, eager_attention_forward
-
+from llm_scratch.k_model import RMSNorm, apply_rotary_pos_emb, eager_attention_forward, MLP
+from llm_scratch.k_model import MLP as Expert
 
 class ModelConfig(PretrainedConfig):
     model_type = "Tiny-MOE"
@@ -30,6 +30,8 @@ class ModelConfig(PretrainedConfig):
             n_limited_groups: int = 3,
             score_func: str = 'sigmoid',
             n_activated_experts: int = 6,
+            moe_inter_dim: int = 192,
+            n_shared_experts: int = 2,
             **kwargs,
     ):
         self.hidden_size = hidden_size
@@ -52,6 +54,8 @@ class ModelConfig(PretrainedConfig):
         self.n_limited_groups = n_limited_groups
         self.n_activated_experts = n_activated_experts
         self.score_func = score_func
+        self.moe_inter_dim = moe_inter_dim
+        self.n_shared_experts = n_shared_experts
 
         super().__init__(**kwargs)
 
@@ -270,3 +274,80 @@ class Gate(nn.Module):
 
         return weights.type_as(x), indices
 
+
+class MoE(nn.Module):
+    def __init__(self, config: PretrainedConfig):
+        super().__init__()
+        self.config = config
+
+        self.hidden_size = config.hidden_size
+        self.n_routed_experts = config.n_routed_experts
+        self.moe_inter_dim = config.moe_inter_dim
+        self.n_shared_experts = config.n_shared_experts
+
+        self.gate = Gate(config)
+        self.experts_start_idx = 0
+        self.experts_end_idx = config.n_routed_experts
+        self.experts = nn.ModuleList(
+            [
+                Expert(hidden_size=self.hidden_size, intermediate_size=self.moe_inter_dim)
+                for i in range(self.n_routed_experts)]
+        )
+        self.shared_experts = MLP(
+            hidden_size = self.hidden_size,
+            intermediate_size = self.n_shared_experts * self.moe_inter_dim
+        )
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+
+        # (batch_size, seq_len, hidden_size)
+        ori_shape = hidden_states.size()
+
+        # (batch_size, seq_len, hidden_size)
+        # -> (batch_size * seq_len, hidden_size) = (all_tokens, hidden_size)
+        all_token_emb = hidden_states.view(-1, self.hidden_size)
+
+        # (all_tokens, hidden_size)
+        # -> (all_tokens, n_activated_experts) + (all_tokens, n_activated_experts)
+        weights, indices = self.gate(all_token_emb)
+
+        # (all_tokens, hidden_size)
+        y = torch.zeros_like(all_token_emb)
+
+        # indices.flatten(): 打平到只有1维，每个值都是activated_expert 对应的index
+        # torch.bincount: 计算每个activated_expert 出现的次数，次数放在对应的index下
+        # topk()[0] -> (all_tokens, n_groups, 2)
+        # sum -> (all_tokens, n_groups)
+        # (all_tokens, n_activated_experts)
+        # -> (all_tokens * n_activated_experts)
+        # -> (n_routed_experts)
+        counts = torch.bincount(indices.flatten(), minlength=self.n_routed_experts).tolist()
+        for i in range(self.experts_start_idx, self.experts_end_idx):
+            if counts[i] == 0:
+                continue
+            expert = self.experts[i]
+            # (all_tokens, n_activated_experts)
+            # == 会变成bool Tensor, 即将取到idnex的值变True，其他变0:  -> (all_tokens, n_activated_experts)
+            # where 会返回cond 为True 对应的 row_index, col_index： -> (cond_true_num) + (cond_true_num)
+            # idx 中的值就是 是否需要走expert的 token idx, top是对应的 expert 在indices 所在 的col_index
+            idx, top = torch.where(indices == i)
+
+            # idx:  (cond_true_num): 对应要取token的 row index
+            # all_token_emb： (all_tokens, hidden_size)
+            # all_token_emb[idx] 取要过当前expert的token: -> (cond_true_num, hidden_size)
+            # expert: 过expert -> (cond_true_num, hidden_size)
+
+            # idx:  (cond_true_num): 对应要取token的 row index
+            # top:  (cond_true_num): 对应要取weight的col index
+            # weights: (all_tokens, n_activated_experts): 各个token对应_activated_experts的权重
+            # weights[idx, top] 指挥取到某个值，得到的是(cond_true_num)，得到对应的权重
+            # weights[idx, top] 加个None进行维度扩充，方便后续乘法的广播: -> (cond_true_num, 1)
+            # 经过当前专家emb * 权重后，赋给输出变量
+            # y: (all_tokens, hidden_size)： 存储各个experts的汇总结果
+            y[idx] += expert(all_token_emb[idx]) * weights[idx, top, None]
+
+        # (all_tokens, hidden_size)
+        z = self.shared_experts(all_token_emb)
+
+        # (batch_size, seq_len, hidden_size)
+        return (y + z).view(ori_shape)

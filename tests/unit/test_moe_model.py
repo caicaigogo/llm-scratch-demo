@@ -12,8 +12,8 @@ from llm_scratch.k_model import (
 from llm_scratch.moe_model import (
     ModelConfig,
     MLA,
-    MoE,
-    Gate
+    Gate,
+    MoE
 )
 from utils.path import find_project_root_with_tests
 
@@ -63,14 +63,6 @@ class TestDeepSeek(unittest.TestCase):
         self.inputs_embeds = self.embed_tokens(self.input_ids)
         # print('inputs_embeds shape ', self.inputs_embeds.shape)
 
-    def test_embed_tokens(self):
-        # Embedding(151936, 896)
-        print('embed_tokens ', self.embed_tokens)
-
-        inputs_embeds = self.embed_tokens(self.input_ids)
-        # torch.Size([1, 43, 896])
-        print('inputs_embeds shape ', inputs_embeds.shape)
-
     def test_MLA(self):
 
         # MLA(
@@ -83,6 +75,7 @@ class TestDeepSeek(unittest.TestCase):
         #   (wo_proj): Linear(in_features=2048, out_features=768, bias=True)
         # )
         mla = MLA(config=self.config)
+        print(mla)
         # input_hidden_states shape  torch.Size([1, 99, 768])
         input_hidden_states = self.inputs_embeds
         print('input_hidden_states shape ', input_hidden_states.shape)
@@ -99,7 +92,7 @@ class TestDeepSeek(unittest.TestCase):
         causal_mask = self.causal_mask
         print('register causal_mask shape ', causal_mask.shape)
 
-        # mla_output shape  torch.Size([1, 43, 896])
+        # mla_output shape  torch.Size([1, 99, 768])
         mla_output = mla(input_hidden_states, cos_emb, sin_emb, casual_mask=causal_mask)
         print('mla_output shape ', mla_output.shape)
 
@@ -118,3 +111,31 @@ class TestDeepSeek(unittest.TestCase):
         top_k_expert_weights, top_k_expert_indices = gate(all_token_emb)
         print('top_k_expert_weights shape ', top_k_expert_weights.shape)
         print('top_k_expert_indices shape ', top_k_expert_indices.shape)
+
+    def test_MoE(self):
+        # MoE(
+        #   (gate): Gate()
+        #   (experts): ModuleList(
+        #     (0-31): 32 x MLP(
+        #       (gate_proj): Linear(in_features=768, out_features=192, bias=False)
+        #       (up_proj): Linear(in_features=768, out_features=192, bias=False)
+        #       (down_proj): Linear(in_features=192, out_features=768, bias=False)
+        #       (act_fn): SiLU()
+        #     )
+        #   )
+        #   (shared_experts): MLP(
+        #     (gate_proj): Linear(in_features=768, out_features=384, bias=False)
+        #     (up_proj): Linear(in_features=768, out_features=384, bias=False)
+        #     (down_proj): Linear(in_features=384, out_features=768, bias=False)
+        #     (act_fn): SiLU()
+        #   )
+        # )
+        moe = MoE(config=self.config)
+        print(moe)
+        # input_hidden_states shape  torch.Size([1, 99, 768])
+        input_hidden_states = self.inputs_embeds
+        print('input_hidden_states shape ', input_hidden_states.shape)
+
+        # moe_output shape  torch.Size([1, 99, 768])
+        moe_output = moe(input_hidden_states)
+        print('moe_output shape ', moe_output.shape)
