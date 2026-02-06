@@ -1,13 +1,20 @@
 # -*- coding: utf-8 -*-
 import os
+# import platform
 import argparse
+# import time
 import warnings
+# import math
+# import pandas as pd
 import torch
+# from torch import optim
+# from torch.utils.data import DataLoader
 from contextlib import nullcontext
 
 from transformers import AutoTokenizer
 
 from llm_scratch.k_model import ModelConfig, LLaMAForCausalLM
+from llm_scratch.dataset import PretrainDataset
 
 
 # 忽略警告信息
@@ -79,7 +86,7 @@ if __name__ == "__main__":
     # 基础训练参数
     parser.add_argument("--out_dir", type=str, default="base_model_215M", help="模型输出目录")
     parser.add_argument("--epochs", type=int, default=1, help="训练轮数")
-    parser.add_argument("--batch_size", type=int, default=64, help="批次大小")
+    parser.add_argument("--batch_size", type=int, default=8, help="批次大小")
     parser.add_argument("--learning_rate", type=float, default=2e-4, help="学习率")
     parser.add_argument("--device", type=str, default="cuda:0" if torch.cuda.is_available() else "cpu", help="训练设备")
     parser.add_argument("--dtype", type=str, default="float32", help="数据类型")
@@ -87,7 +94,7 @@ if __name__ == "__main__":
     # 实验跟踪和数据加载参数
     parser.add_argument("--use_swanlab", action="store_true", help="是否使用SwanLab进行实验跟踪")
     parser.add_argument("--num_workers", type=int, default=8, help="数据加载的工作进程数")
-    parser.add_argument("--data_path", type=str, default="./seq_monkey_datawhale.jsonl", help="训练数据路径")
+    parser.add_argument("--data_path", type=str, default="./data/jinyong.jsonl", help="训练数据路径")
 
     # 训练优化参数
     parser.add_argument("--accumulation_steps", type=int, default=8, help="梯度累积步数")
@@ -101,8 +108,8 @@ if __name__ == "__main__":
     # 多GPU训练参数
     parser.add_argument("--gpus", type=str, default='0,1,2,3,4,5,6,7', help="使用的GPU ID，用逗号分隔 (例如: '0,1,2')")
 
-    # Namespace(out_dir='base_model_215M', epochs=1, batch_size=64, learning_rate=0.0002, device='cpu', dtype='float32',
-    #           use_swanlab=False, num_workers=8, data_path='./seq_monkey_datawhale.jsonl', accumulation_steps=8,
+    # Namespace(out_dir='base_model_215M', epochs=1, batch_size=8, learning_rate=0.0002, device='cpu', dtype='float32',
+    #           use_swanlab=False, num_workers=8, data_path='./data/jinyong.jsonl', accumulation_steps=8,
     #           grad_clip=1.0, warmup_iters=0, log_interval=100, save_interval=1000, gpus='0,1,2,3,4,5,6,7')
     args = parser.parse_args()
     print(args)
@@ -154,3 +161,6 @@ if __name__ == "__main__":
     # ==================== 模型和数据初始化 ====================
     # 初始化模型和分词器
     model, tokenizer = init_model()
+
+    # 创建训练数据集
+    train_ds = PretrainDataset(args.data_path, tokenizer, max_length=max_seq_len)
