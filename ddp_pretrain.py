@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
 import os
-# import platform
 import argparse
-# import time
+import time
 import warnings
-# import math
-# import pandas as pd
+import math
 import torch
-# from torch import optim
-# from torch.utils.data import DataLoader
+from torch import optim
+from torch.utils.data import DataLoader
 from contextlib import nullcontext
 
 from transformers import AutoTokenizer
@@ -30,6 +28,75 @@ def Logger(content):
     """
     print(content)
 
+
+def get_lr(it, all):
+    """
+    计算当前迭代的学习率，使用余弦退火调度策略
+
+    学习率调度策略：
+    1. Warmup阶段：学习率从0线性增长到目标学习率
+    2. 余弦退火阶段：学习率按余弦函数衰减到最小学习率
+    3. 超出训练步数后：保持最小学习率
+
+    Args:
+        it (int): 当前迭代步数
+        all (int): 总迭代步数
+
+    Returns:
+        float: 当前步数对应的学习率
+    """
+    warmup_iters = args.warmup_iters  # 预热迭代次数
+    lr_decay_iters = all  # 学习率衰减的总迭代次数
+    min_lr = args.learning_rate / 10  # 最小学习率，为初始学习率的1/10
+
+    # Warmup阶段：线性增长
+    if it < warmup_iters:
+        return args.learning_rate * it / warmup_iters
+
+    # 超出训练步数：保持最小学习率
+    if it > lr_decay_iters:
+        return min_lr
+
+    # 余弦退火阶段
+    decay_ratio = (it - warmup_iters) / (lr_decay_iters - warmup_iters)
+    assert 0 <= decay_ratio <= 1
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))  # 余弦系数
+    return min_lr + coeff * (args.learning_rate - min_lr)
+
+
+def train_epoch(epoch):
+    """
+    训练一个epoch的函数
+
+    实现了完整的训练循环，包括：
+    1. 数据加载和设备转移
+    2. 动态学习率调整
+    3. 前向传播和损失计算
+    4. 梯度累积和反向传播
+    5. 梯度裁剪和优化器更新
+    6. 日志记录和模型保存
+
+    Args:
+        epoch (int): 当前epoch编号
+    """
+    start_time = time.time()  # 记录开始时间
+    # 遍历数据加载器中的每个batch
+    for step, (X, Y, loss_mask) in enumerate(train_loader):
+        # 将数据转移到指定设备（GPU/CPU）
+        X = X.to(args.device)  # 输入序列
+        Y = Y.to(args.device)  # 目标序列
+        loss_mask = loss_mask.to(args.device)  # 损失掩码，用于忽略padding token
+
+        # 计算当前步骤的学习率
+        lr = get_lr(epoch * iter_per_epoch + step, args.epochs * iter_per_epoch)
+        # 更新优化器中所有参数组的学习率
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = lr
+
+        # 使用混合精度训练上下文
+        with ctx:
+            # 前向传播
+            out = model(X, Y)
 
 def init_model():
     """
@@ -164,3 +231,30 @@ if __name__ == "__main__":
 
     # 创建训练数据集
     train_ds = PretrainDataset(args.data_path, tokenizer, max_length=max_seq_len)
+
+
+    # 创建数据加载器
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=args.batch_size,  # 批次大小
+        pin_memory=True,  # 将数据加载到固定内存中，加速GPU传输
+        drop_last=False,  # 不丢弃最后一个不完整的批次
+        shuffle=True,  # 随机打乱数据
+        num_workers=args.num_workers  # 数据加载的并行工作进程数
+    )
+
+    # ==================== 优化器和训练组件初始化 ====================
+    # 初始化混合精度训练的梯度缩放器
+    # 只有在使用float16或bfloat16时才启用
+    scaler = torch.cuda.amp.GradScaler(enabled=(args.dtype in ['float16', 'bfloat16']))
+
+    # 初始化Adam优化器
+    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+
+    # ==================== 开始训练 ====================
+    # 计算每个epoch的迭代次数
+    iter_per_epoch = len(train_loader)
+
+    # 开始训练循环
+    for epoch in range(args.epochs):
+        train_epoch(epoch)

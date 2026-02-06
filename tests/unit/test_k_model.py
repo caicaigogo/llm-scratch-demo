@@ -333,9 +333,25 @@ class TestTransformer(unittest.TestCase):
         input_ids = self.input_ids
         print('input_ids shape ', input_ids.shape)
 
-        # casual_lm_output shape  torch.Size([1, 1, 6144])
-        casual_lm_output = casual_lm(input_ids)
-        print('casual_lm_output shape ', casual_lm_output.shape)
+        # inference_casual_lm_output.logits  torch.Size([1, 1, 6144])
+        # inference_casual_lm_output.last_loss  None
+        inference_casual_lm_output = casual_lm(input_ids)
+        print('inference_casual_lm_output.logits shape ', inference_casual_lm_output.logits.shape)
+        print('inference_casual_lm_output.last_loss ', inference_casual_lm_output.last_loss)
+
+        # train_input_ids shape torch.Size([1, 98])
+        # target_ids shape torch.Size([1, 98])
+        train_input_ids = input_ids[:, :-1]
+        target_ids = input_ids[:, 1:]
+        print('train_input_ids shape ', train_input_ids.shape)
+        print('target_ids shape ', target_ids.shape)
+
+
+        # train_casual_lm_output.logits  torch.Size([1, 98, 6144])
+        # train_casual_lm_output.last_loss shape torch.Size([98])
+        train_casual_lm_output = casual_lm(train_input_ids, target_ids)
+        print('train_casual_lm_output.logits shape ', train_casual_lm_output.logits.shape)
+        print('train_casual_lm_output.last_loss shape', train_casual_lm_output.last_loss.shape)
 
     def test_generate(self):
 
@@ -344,6 +360,6 @@ class TestTransformer(unittest.TestCase):
         input_ids = self.input_ids
         print('input_ids shape ', input_ids.shape)
 
-        # casual_lm_output shape  torch.Size([, 5])
+        # casual_lm_output shape  torch.Size([1, 5])
         casual_lm_output = casual_lm.generate(input_ids, max_new_tokens=5)
         print('casual_lm_output shape ', casual_lm_output.shape)

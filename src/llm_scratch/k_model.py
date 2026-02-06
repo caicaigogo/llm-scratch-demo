@@ -1,6 +1,7 @@
 from transformers import PretrainedConfig, PreTrainedModel
 import torch
 from torch import nn
+from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.models import Qwen2Model, Qwen2ForCausalLM
 
 class ModelConfig(PretrainedConfig):
@@ -372,6 +373,11 @@ class LLaMAForCausalLM(PreTrainedModel):
         # 初始化所有权重
         self.apply(init_weights)
 
+        # 初始化最后一次前向传播的损失属性
+        self.last_loss = None
+        self.OUT = CausalLMOutputWithPast()  # 输出容器
+        self._no_split_modules = [name for name, _ in self.named_modules()]  # 不分割的模块列表
+
     def forward(
         self,
         input_ids,
@@ -386,13 +392,27 @@ class LLaMAForCausalLM(PreTrainedModel):
             # (batch_size, seq_len, vocab_size)
             # -> (batch_size, seq_len, vocab_size)
             vocab_logits = self.lm_head(hidden_states)
+            self.last_loss = None
+
+            # cross_entropy 的input 的第二个维度（或第一个维度，当无 batch 时）必须是类别数 C， 即vocab_SIZE
+            # input ： (batch_size, seq_len, vocab_size) -> (batch_size * seq_len, vocab_size)
+            # target : (batch_size, seq_len) -> (batch_size * seq_len)
+            # last_loss: (batch_size * seq_len)
+            self.last_loss = nn.functional.cross_entropy(vocab_logits.view(-1, vocab_logits.size(-1)), targets.view(-1), ignore_index=0, reduction='none')
+
         else:
             # (batch_size, seq_len, hidden_size)
             # -> (batch_size, 1, vocab_size)
             # -> (batch_size, 1, vocab_size)
             # 推理时的小优化：只对最后一个位置的输出进行前向传播
             vocab_logits = self.lm_head(hidden_states[:, [-1], :])
-        return vocab_logits
+            self.last_loss = None
+
+        # 设置输出
+        self.OUT.__setitem__('logits', vocab_logits)
+        self.OUT.__setitem__('last_loss', self.last_loss)
+
+        return self.OUT
 
     @torch.inference_mode()
     def generate(self, input_ids, stop_id=None, max_new_tokens=256, temperature=1.0, top_k=2):
@@ -415,7 +435,7 @@ class LLaMAForCausalLM(PreTrainedModel):
             # 前向传播获取序列中最后一个位置的 logits
             # (batch_size, seq_len)
             # -> # (batch_size, 1, vocab_size)
-            logits = self(input_ids_cond)
+            logits = self(input_ids_cond).logits
 
             # (batch_size, seq_len)
             # -> # (batch_size, vocab_size)
