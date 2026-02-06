@@ -6,3 +6,4 @@ tokenizer_k
 Qwen
 **/*.egg-info
 **/__pycache__
+base_model_215M

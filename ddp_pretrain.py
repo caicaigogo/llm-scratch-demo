@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 import os
+# import platform
 import argparse
 import time
 import warnings
 import math
+# import pandas as pd
 import torch
 from torch import optim
 from torch.utils.data import DataLoader
@@ -83,6 +85,7 @@ def train_epoch(epoch):
     # 遍历数据加载器中的每个batch
     for step, (X, Y, loss_mask) in enumerate(train_loader):
         # 将数据转移到指定设备（GPU/CPU）
+        # X, Y, loss_mask： (batch_size, max_seq_len -1)
         X = X.to(args.device)  # 输入序列
         Y = Y.to(args.device)  # 目标序列
         loss_mask = loss_mask.to(args.device)  # 损失掩码，用于忽略padding token
@@ -97,6 +100,82 @@ def train_epoch(epoch):
         with ctx:
             # 前向传播
             out = model(X, Y)
+            # 计算损失并除以累积步数（用于梯度累积）
+            # loss: (batch_size * (max_seq_len - 1))
+            loss = out.last_loss / args.accumulation_steps
+
+            # (batch_size, max_seq_len -1)
+            # -> (batch_size * (max_seq_len - 1))
+            loss_mask = loss_mask.view(-1)
+            # 应用掩码计算有效损失（忽略padding位置）
+
+            # tensor(1.1065, grad_fn=<DivBackward0>) torch.Size([])
+            loss = torch.sum(loss * loss_mask) / loss_mask.sum()
+
+
+        # 使用scaler进行混合精度的反向传播
+        scaler.scale(loss).backward()
+
+        # 每accumulation_steps步执行一次优化器更新
+        if (step + 1) % args.accumulation_steps == 0:
+            # 取消梯度缩放，准备梯度裁剪
+            scaler.unscale_(optimizer)
+            # 梯度裁剪，防止梯度爆炸
+            torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
+
+            # 执行优化器步骤
+            scaler.step(optimizer)
+            # 更新scaler的缩放因子
+            scaler.update()
+
+            # 清零梯度，set_to_none=True可以节省内存
+            optimizer.zero_grad(set_to_none=True)
+
+        # 每log_interval步记录一次日志
+        if step % args.log_interval == 0:
+            spend_time = time.time() - start_time
+            # 打印训练进度信息
+            Logger(
+                'Epoch:[{}/{}]({}/{}) loss:{:.3f} lr:{:.7f} epoch_Time:{}min;'.format(
+                    epoch + 1,
+                    args.epochs,
+                    step,
+                    iter_per_epoch,
+                    loss.item() * args.accumulation_steps,  # 恢复真实的loss值
+                    optimizer.param_groups[-1]['lr'],
+                    spend_time / (step + 1) * iter_per_epoch // 60 - spend_time // 60))
+
+            # 如果启用SwanLab，记录训练指标
+            if args.use_swanlab:
+                swanlab.log({
+                    "loss": loss.item() * args.accumulation_steps,
+                    "lr": optimizer.param_groups[-1]['lr']
+                })
+
+        # 每save_interval步保存一次模型
+        if (step + 1) % args.save_interval == 0:
+            model.eval()  # 切换到评估模式
+            # 构建检查点文件名
+            ckp = f'{args.save_dir}/pretrain_{lm_config.hidden_size}_{lm_config.num_hidden_layers}_' \
+                  f'{lm_config.vocab_size}.pth'
+
+            # 处理多卡保存：如果是DataParallel模型，需要访问.module属性
+            state_dict = model.module.state_dict() if isinstance(model, torch.nn.DataParallel) else model.state_dict()
+            torch.save(state_dict, ckp)
+            model.train()  # 切换回训练模式
+
+        # 每20000步保存一个带步数标记的检查点
+        if (step + 1) % 20000 == 0:
+            model.eval()
+            # 构建带步数的检查点文件名
+            ckp = f'{args.save_dir}/pretrain_{lm_config.hidden_size}_{lm_config.num_hidden_layers}_' \
+                  f'{lm_config.vocab_size}_step{step + 1}.pth'
+
+            # 保存模型状态字典
+            state_dict = model.module.state_dict() if isinstance(model, torch.nn.DataParallel) else model.state_dict()
+            torch.save(state_dict, ckp)
+            model.train()
+
 
 def init_model():
     """
@@ -169,8 +248,8 @@ if __name__ == "__main__":
     parser.add_argument("--warmup_iters", type=int, default=0, help="学习率预热迭代次数")
 
     # 日志和保存参数
-    parser.add_argument("--log_interval", type=int, default=100, help="日志记录间隔")
-    parser.add_argument("--save_interval", type=int, default=1000, help="模型保存间隔")
+    parser.add_argument("--log_interval", type=int, default=1, help="日志记录间隔")
+    parser.add_argument("--save_interval", type=int, default=1, help="模型保存间隔")
 
     # 多GPU训练参数
     parser.add_argument("--gpus", type=str, default='0,1,2,3,4,5,6,7', help="使用的GPU ID，用逗号分隔 (例如: '0,1,2')")
@@ -204,8 +283,8 @@ if __name__ == "__main__":
     # ==================== 模型配置 ====================
     # 定义语言模型的配置参数
     lm_config = ModelConfig(
-        hidden_size=1024,  # 模型维度
-        num_hidden_layers=18,  # Transformer层数
+        hidden_size=512,  # 模型维度
+        num_hidden_layers=2,  # Transformer层数
     )
 
     # ==================== 训练环境设置 ====================

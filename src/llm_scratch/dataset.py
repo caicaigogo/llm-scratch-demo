@@ -34,14 +34,15 @@ class PretrainDataset(Dataset):
         # 0表示不计算损失
         loss_mask = [1] * text_len + [0] * padding_len
 
-        input_id = np.array(input_id)
-        X = np.array(input_id[:-1]).astype(np.int64)
-        Y = np.array(input_id[1:]).astype(np.int64)
-        loss_mask = np.array(loss_mask[1:]).astype(np.int64)
+        input_id = torch.tensor(input_id, dtype = torch.long)
+        X = input_id[:-1]
+        Y = input_id[1:]
+
+        loss_mask = torch.tensor(loss_mask[1:], dtype = torch.long)
 
         # 基于item来看，返回的都是torch.Size([self.max_length -1])
         # 首个token 会被忽略掉预测，所以长度为self.max_length -1
         # X为input_ids
         # Y为移位后作为labels的output_ids
         # loss_mask 1或0， 0代表不会计算损失。 [0] * padding_len， 0的数量与padding_len一致
-        return torch.from_numpy(X), torch.from_numpy(Y), torch.from_numpy(loss_mask)
+        return X, Y, loss_mask
