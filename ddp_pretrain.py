@@ -12,7 +12,7 @@ from contextlib import nullcontext
 from transformers import AutoTokenizer
 
 from llm_scratch.k_model import ModelConfig, LLaMAForCausalLM
-from llm_scratch.dataset import PretrainDataset
+from llm_scratch.dataset import PretrainDataset, SFTDataset
 
 
 # 忽略警告信息
@@ -310,6 +310,8 @@ if __name__ == "__main__":
     # 创建训练数据集
     if args.train_mode == 'pretrain':
         train_ds = PretrainDataset(args.data_path, tokenizer, max_length=max_seq_len)
+    elif args.train_mode == 'sft':
+        train_ds = SFTDataset(args.data_path, tokenizer, max_length=max_seq_len)
     else:
         raise Exception('no support train mode'.format(args.train_mode))
 
@@ -329,7 +331,12 @@ if __name__ == "__main__":
     scaler = torch.cuda.amp.GradScaler(enabled=(args.dtype in ['float16', 'bfloat16']))
 
     # 初始化Adam优化器
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+    if args.train_mode == 'pretrain':
+        optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+    elif args.train_mode == 'sft':
+        optimizer = optim.AdamW(model.parameters(), lr=args.learning_rate)
+    else:
+        raise Exception('no support train mode'.format(args.train_mode))
 
     # ==================== 开始训练 ====================
     # 计算每个epoch的迭代次数
