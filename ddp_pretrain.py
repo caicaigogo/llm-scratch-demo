@@ -240,7 +240,6 @@ if __name__ == "__main__":
     parser.add_argument("--use_swanlab", action="store_true", help="是否使用SwanLab进行实验跟踪")
     parser.add_argument("--num_workers", type=int, default=8, help="数据加载的工作进程数")
     parser.add_argument("--data_path", type=str, default="./data/pretrain_50_jinyong.jsonl", help="训练数据路径")
-    parser.add_argument("--train_mode", type=str, default="sft", help="训练方式")
 
     # 训练优化参数
     parser.add_argument("--accumulation_steps", type=int, default=8, help="梯度累积步数")
