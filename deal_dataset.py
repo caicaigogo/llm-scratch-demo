@@ -16,9 +16,9 @@ def deal_pretain_data(input_path):
 
     parent = input_path.parent
 
-    output_path = parent / output_name
+    output_pretrain_path = parent / output_name
 
-    with open(output_path, 'w', encoding='utf-8') as pretrain:
+    with open(output_pretrain_path, 'w', encoding='utf-8') as pretrain:
         with open(input_path, 'r', encoding='utf-8') as f:
             data = f.readlines()
             for line in tqdm(data, desc=f"Processing lines in {input_path}", leave=False):  # 添加行级别的进度条
@@ -35,8 +35,9 @@ if __name__ == "__main__":
 
     # 基础训练参数
     parser.add_argument("--data_path", type=str, help="数据路径")
-    parser.add_argument("--deal_type", help="处理方式")
+    parser.add_argument("--train_mode", help="训练方式")
     args = parser.parse_args()
 
     if args.deal_type == 'pretrain':
         deal_pretain_data(args.data_path)
+
