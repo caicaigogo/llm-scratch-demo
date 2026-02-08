@@ -38,6 +38,5 @@ if __name__ == "__main__":
     parser.add_argument("--train_mode", help="训练方式")
     args = parser.parse_args()
 
-    if args.deal_type == 'pretrain':
+    if args.train_mode == 'pretrain':
         deal_pretain_data(args.data_path)
-
