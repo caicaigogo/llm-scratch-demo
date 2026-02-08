@@ -1,0 +1,1 @@
+python deal_dataset.py --data_path ./data/jinyong.jsonl --deal_type pretrain
