@@ -1,2 +1,3 @@
 # pip install -e ".[train]"
-python ddp_pretrain.py --data_path ./data/pretrain_50_jinyong.jsonl --train_mode pretrain
+# python ddp_train.py --data_path ./data/pretrain_50_jinyong.jsonl --train_mode pretrain
+python ddp_train.py --data_path ./data/sft_train_50_CN.jsonl --train_mode sft

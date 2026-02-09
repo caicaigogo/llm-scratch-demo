@@ -15,14 +15,27 @@ class PretrainDataset(Dataset):
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.padding = 0
-        with open(data_path, 'r', encoding='utf-8') as f:
-            self.data = f.readlines()
+        # with open(data_path, 'r', encoding='utf-8') as f:
+        #     self.data = f.readlines()
+        # 预计算每行的起始字节偏移量
+        self._offsets = []
+        with open(data_path, 'rb') as f:
+            self._offsets.append(0)
+            while f.readline():
+                self._offsets.append(f.tell())
+        self._total_lines = len(self._offsets) - 1  # 最后一个 tell() 是 EOF
 
     def __len__(self):
-        return len(self.data)
+        # return len(self.data)
+        return self._total_lines
 
     def __getitem__(self, index: int):
-        sample = json.loads(self.data[index])
+        with open(self.data_path, 'rb') as f:
+            f.seek(self._offsets[index])
+            line = f.readline().decode('utf-8')
+        sample = json.loads(line)
+
+        # sample = json.loads(self.data[index])
         text = f"{self.tokenizer.bos_token}{sample['text']}"
         #  截长
         input_id = self.tokenizer(text).data['input_ids'][:self.max_length]
@@ -49,20 +62,26 @@ class PretrainDataset(Dataset):
 
 
 class SFTDataset(Dataset):
+
     def __init__(self, data_path, tokenizer, max_length=512):
         super().__init__()
         self.data_path = data_path
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.padding = 0
-        with open(data_path, 'r', encoding='utf-8') as f:
-            self.data = f.readlines()
+        self._offsets = []
+        with open(data_path, 'rb') as f:
+            self._offsets.append(0)
+            while f.readline():
+                self._offsets.append(f.tell())
+        self._total_lines = len(self._offsets) - 1
 
     def __len__(self):
-        return len(self.data)
+        return self._total_lines
 
     def generate_loss_mask(self, input_ids):
         # 生成 loss mask, 0 表示不计算损失, 1 表示计算损失
+        # role为 assistant 的算loss
         mask = [0] * len(input_ids)
         a_sequence = self.tokenizer("<|im_start|>assistant\n")['input_ids']  # <|im_start|>assistant\n
         a_length = len(a_sequence)
@@ -98,18 +117,30 @@ class SFTDataset(Dataset):
         return mask
 
     def __getitem__(self, index: int):
-        sample = json.loads(self.data[index])
+        with open(self.data_path, 'rb') as f:
+            f.seek(self._offsets[index])
+            line = f.readline().decode('utf-8')
+        sample = json.loads(line)
         text = self.tokenizer.apply_chat_template(sample, tokenize=False, add_generation_prompt=False)
         input_id = self.tokenizer(text).data['input_ids'][:self.max_length]
         text_len = len(input_id)
         # 没满最大长度的剩余部分
         padding_len = self.max_length - text_len
         input_id = input_id + [self.padding] * padding_len
+        loss_mask = self.generate_loss_mask(input_id)
         # 0表示不计算损失
         loss_mask = self.generate_loss_mask(input_id)
 
-        input_id = np.array(input_id)
-        X = np.array(input_id[:-1]).astype(np.int64)
-        Y = np.array(input_id[1:]).astype(np.int64)
-        loss_mask = np.array(loss_mask[1:]).astype(np.int64)
-        return torch.from_numpy(X), torch.from_numpy(Y), torch.from_numpy(loss_mask)
+        input_id = torch.tensor(input_id, dtype = torch.long)
+
+        X = input_id[:-1]
+        Y = input_id[1:]
+
+        loss_mask = torch.tensor(loss_mask[1:], dtype = torch.long)
+
+        # 基于item来看，返回的都是torch.Size([self.max_length -1])
+        # 首个token 会被忽略掉预测，所以长度为self.max_length -1
+        # X为input_ids
+        # Y为移位后作为labels的output_ids
+        # loss_mask 1或0， 0代表不会计算损失。 [0] * padding_len， 0的数量与padding_len一致
+        return X, Y, loss_mask

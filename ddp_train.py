@@ -175,7 +175,7 @@ def train_epoch(epoch):
             model.train()
 
 
-def init_model():
+def init_model(train_mode):
     """
     初始化模型和分词器
 
@@ -207,6 +207,17 @@ def init_model():
 
     # 根据配置创建Transformer模型
     model = LLaMAForCausalLM(lm_config)
+
+    if train_mode == 'sft':
+    # 加载预训练权重
+        ckp = './base_model_215M/pretrain_512_2_6144.pth'
+        state_dict = torch.load(ckp, map_location=args.device)
+        unwanted_prefix = '_orig_mod.'
+        for k, v in list(state_dict.items()):
+            if k.startswith(unwanted_prefix):
+                state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k)
+        model.load_state_dict(state_dict, strict=False)
+        print('load model weight finish')
 
     # 多卡初始化：检查可用GPU数量并设置DataParallel
     num_gpus = torch.cuda.device_count()
@@ -273,9 +284,15 @@ if __name__ == "__main__":
     if args.use_swanlab:
         import swanlab
         # 注意：使用前需要先登录 swanlab.login(api_key='your key')
+        if args.train_mode == 'pretrain':
+            experiment_name = "Pretrain-215M"
+        elif args.train_mode == 'sft':
+            experiment_name = "SFT-215M"
+        else:
+            raise Exception('no support train mode'.format(args.train_mode))
         run = swanlab.init(
             project="Happy-LLM",  # 项目名称
-            experiment_name="Pretrain-215M",  # 实验名称
+            experiment_name=experiment_name,  # 实验名称
             config=args,  # 保存所有超参数
         )
 
@@ -305,7 +322,7 @@ if __name__ == "__main__":
 
     # ==================== 模型和数据初始化 ====================
     # 初始化模型和分词器
-    model, tokenizer = init_model()
+    model, tokenizer = init_model(train_mode=args.train_mode)
 
     # 创建训练数据集
     if args.train_mode == 'pretrain':
