@@ -3,6 +3,10 @@ import os
 import json
 from loguru import logger
 import torch
+from tqdm import tqdm
+import datasets
+from datasets import load_dataset, concatenate_datasets
+from itertools import chain
 
 from transformers import (
     HfArgumentParser,
@@ -10,10 +14,12 @@ from transformers import (
     set_seed,
     AutoTokenizer,
     AutoModelForCausalLM,
-    AutoConfig
+    AutoConfig,
+    Trainer
 )
 
 from llm_scratch.train_component.argument import CustomizedArguments
+from llm_scratch.train_component.collator import PretrainCollator
 
 
 def setup_everything():
@@ -152,6 +158,134 @@ def load_model(args, training_args):
     }
 
 
+def load_pretrain_dataset(training_args, cus_args, tokenizer):
+    """
+    多线程预处理预训练数据
+    """
+    def tokenize_function(examples):
+        output = tokenizer(examples["text"])
+        output = {'input_ids': output.input_ids}
+        return output
+
+    def group_texts(examples):
+        # Concatenate all texts.
+        # k -> input_ids
+        # examples 是 lazy Batch 类型， 循环取
+        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
+        total_length = len(concatenated_examples[list(examples.keys())[0]])
+        # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
+        # customize this part to your needs.
+        # 截尾
+        if total_length >= max_seq_len:
+            total_length = (total_length // max_seq_len) * max_seq_len
+        # Split by chunks of max_len.
+        result = {
+            k: [t[i: i + max_seq_len] for i in range(0, total_length, max_seq_len)]
+            for k, t in concatenated_examples.items()
+        }
+        return result
+
+    data_path = cus_args.train_file
+    max_seq_len = cus_args.max_seq_len
+    # 创建缓存路径
+    cache_dir = os.path.join(data_path, 'cache')
+    os.makedirs(cache_dir, exist_ok=True)
+    logger.info('Pretraining data path: {}'.format(data_path))
+
+    # 扫描所有jsonl文件
+    logger.info('Scanning all the training file...')
+    files = []
+    for root, dir_names, file_names in os.walk(data_path):
+        for file_name in file_names:
+            file = os.path.join(root, file_name)
+            if file_name.endswith('.jsonl'):
+                files.append(file)
+    logger.info(f'Total num of training file: {len(files)}')
+
+    # 预处理所有文本，将其id化，并且进行packing操作
+    with training_args.main_process_first(desc="dataset map tokenization and grouping"):
+        pretrain_dataset = []  # 汇总所有dataset
+        for idx, file in enumerate(tqdm(files)):
+            logger.info(f'Loading file: {file}')
+            file_name = os.path.basename(file)
+            file_name = file_name.replace('.jsonl', '')
+            cache_path = os.path.join(cache_dir, file_name)
+            os.makedirs(cache_path, exist_ok=True)
+
+            try:
+                processed_dataset = datasets.load_from_disk(cache_path, keep_in_memory=False)
+                logger.info(f'Finished loading datasets-{file_name} from cache')
+            except Exception:
+                tmp_cache_path = os.path.join(cache_path, 'tmp')    # 临时缓存目录，会被自动删除
+                logger.info(f'There is no cache of file {file_name}, start preprocessing...')
+                raw_dataset = load_dataset("json", data_files=file, cache_dir=tmp_cache_path, keep_in_memory=False)
+
+                # DatasetDict({
+                #     train: Dataset({
+                #         features: ['text'],
+                #         num_rows: 50
+                #     })
+                # })
+                print(raw_dataset)
+
+                # dict类型， {'text': 'xxxx'}
+                print('out', raw_dataset['train'][0])
+
+                #  When using `batched=True`, make sure provided `function` returns a `dict` of types like
+                #  `(<class 'list'>, <class 'numpy.ndarray'>, <class 'pandas.core.series.Series'>,
+                #  <class 'torch.Tensor'>)`.
+                tokenized_dataset = raw_dataset.map(
+                    tokenize_function,
+                    batched=True,
+                    num_proc=cus_args.tokenize_num_workers,
+                    remove_columns="text",
+                    load_from_cache_file=True,
+                    keep_in_memory=False,
+                    cache_file_names={k: os.path.join(tmp_cache_path, 'tokenized.arrow') for k in raw_dataset},
+                    desc="Running tokenizer on dataset",
+                )
+                # DatasetDict({
+                #     train: Dataset({
+                #         features: ['input_ids'],
+                #         num_rows: 50
+                #     })
+                # })
+                print(tokenized_dataset)
+
+                grouped_datasets = tokenized_dataset.map(
+                    group_texts,
+                    batched=True,
+                    num_proc=cus_args.tokenize_num_workers,
+                    load_from_cache_file=True,
+                    keep_in_memory=False,
+                    cache_file_names={k: os.path.join(tmp_cache_path, 'grouped.arrow') for k in tokenized_dataset},
+                    desc=f"Grouping texts in chunks of {max_seq_len}",
+                )
+
+                # num_row, 每行长度都是 max_seq_len
+                # DatasetDict({
+                #     train: Dataset({
+                #         features: ['input_ids'],
+                #         num_rows: 38
+                #     })
+                # })
+                print(grouped_datasets)
+
+                processed_dataset = grouped_datasets
+                processed_dataset.save_to_disk(cache_path)
+                # 删除临时目录
+                # shutil.rmtree(tmp_cache_path)
+
+            logger.info(f"Training number of {file_name}: {len(processed_dataset['train'])}")
+            if idx == 0:
+                pretrain_dataset = processed_dataset['train']
+            else:
+                assert pretrain_dataset.features.type == processed_dataset["train"].features.type
+                pretrain_dataset = concatenate_datasets([pretrain_dataset, processed_dataset["train"]])
+    logger.info(f"Total training number: {len(pretrain_dataset)}")
+    return pretrain_dataset
+
+
 def init_components(cus_args, training_args):
     """
     初始化各个组件
@@ -166,6 +300,24 @@ def init_components(cus_args, training_args):
     components = load_model(cus_args, training_args)
     model = components['model']
 
+    # 初始化dataset和collator
+    if cus_args.task_type == 'pretrain':
+        logger.info('Train model with pretrain task')
+        train_dataset = load_pretrain_dataset(training_args, cus_args, tokenizer)
+        data_collator = PretrainCollator(tokenizer, cus_args.max_seq_len)
+
+    else:
+        raise Exception('no support task_type')
+
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        data_collator=data_collator
+    )
+
+    return trainer
+
 
 def main():
     # 进行一些配置和检查
@@ -173,7 +325,17 @@ def main():
 
     # 加载各种组件
     trainer = init_components(cus_args, training_args)
-
+    # 开始训练
+    logger.info("*** starting training ***")
+    train_result = trainer.train()
+    # 保存最好的checkpoint
+    final_save_path = os.path.join(training_args.output_dir)
+    trainer.save_model(final_save_path)  # Saves the tokenizer too
+    # 保存训练指标
+    metrics = train_result.metrics
+    trainer.log_metrics("train", metrics)
+    trainer.save_metrics("train", metrics)
+    trainer.save_state()
 
 if __name__ == "__main__":
     main()

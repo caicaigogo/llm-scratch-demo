@@ -26,7 +26,7 @@ class TestTokenizer(unittest.TestCase):
     def setUp(self):
         project_root = find_project_root_with_tests()
         os.chdir(project_root)
-        data_path = 'data/sft_train_50_CN.json'
+        data_path = 'data/sft_train_50_CN.jsonl'
         with open(data_path, 'rb') as f:
             line = f.readline().decode('utf-8')
         self.sample = json.loads(line)
@@ -65,3 +65,19 @@ class TestTokenizer(unittest.TestCase):
 
         # <|im_end|>
         print(self.tokenizer.decode(eos_token_id))
+
+        pad_token_id = self.tokenizer.pad_token_id
+        # 4
+        print(pad_token_id)
+
+        # <|im_end|>
+        print(self.tokenizer.decode(pad_token_id))
+
+    def test_call(self):
+
+        source = ['source_a', 'source_b']
+
+        # {'input_ids': [[87, 83, 89, 86, 71, 73, 67, 69], [87, 83, 89, 86, 71, 73, 67, 70]],
+        # 'attention_mask': [[1, 1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1, 1]]}
+        output = self.tokenizer(source)
+        print(output)
