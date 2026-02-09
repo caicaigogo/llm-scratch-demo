@@ -16,7 +16,9 @@ dependencies = [
 [project.optional-dependencies]
 # 搜索功能依赖
 train = [
-    "swanlab"
+    "swanlab",
+    "accelerate>=0.26.0",
+    "loguru"
 ]
 
 [tool.setuptools.packages.find]
