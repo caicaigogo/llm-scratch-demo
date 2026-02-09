@@ -110,7 +110,6 @@ def train_epoch(epoch):
             # tensor(1.1065, grad_fn=<DivBackward0>) torch.Size([])
             loss = torch.sum(loss * loss_mask) / loss_mask.sum()
 
-
         # 使用scaler进行混合精度的反向传播
         scaler.scale(loss).backward()
 
@@ -154,7 +153,7 @@ def train_epoch(epoch):
         if (step + 1) % args.save_interval == 0:
             model.eval()  # 切换到评估模式
             # 构建检查点文件名
-            ckp = f'{args.save_dir}/pretrain_{lm_config.hidden_size}_{lm_config.num_hidden_layers}_' \
+            ckp = f'{args.save_dir}/{lm_config.hidden_size}_{lm_config.num_hidden_layers}_' \
                   f'{lm_config.vocab_size}.pth'
 
             # 处理多卡保存：如果是DataParallel模型，需要访问.module属性
@@ -166,7 +165,7 @@ def train_epoch(epoch):
         if (step + 1) % 20000 == 0:
             model.eval()
             # 构建带步数的检查点文件名
-            ckp = f'{args.save_dir}/pretrain_{lm_config.hidden_size}_{lm_config.num_hidden_layers}_' \
+            ckp = f'{args.save_dir}/{lm_config.hidden_size}_{lm_config.num_hidden_layers}_' \
                   f'{lm_config.vocab_size}_step{step + 1}.pth'
 
             # 保存模型状态字典
