@@ -209,7 +209,7 @@ def init_model(train_mode):
 
     if train_mode == 'sft':
     # 加载预训练权重
-        ckp = './base_model_215M/pretrain_512_2_6144.pth'
+        ckp = './base_model_215M/512_2_6144.pth'
         state_dict = torch.load(ckp, map_location=args.device)
         unwanted_prefix = '_orig_mod.'
         for k, v in list(state_dict.items()):

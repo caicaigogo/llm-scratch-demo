@@ -343,9 +343,10 @@ class LLaMAModel(PreTrainedModel):
 
         causal_mask = precompute_causal_mask(self.config.max_position_embeddings)
         self.register_buffer("causal_mask", causal_mask, persistent=False)
-
         # 初始化所有权重
-        self.apply(init_weights)
+        # self.apply(init_weights)
+        # Initialize weights and apply final processing
+        self.post_init()
 
     def forward(
         self,
@@ -371,13 +372,14 @@ class LLaMAForCausalLM(PreTrainedModel):
         self.vocab_size = config.vocab_size
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
 
-        # 初始化所有权重
-        self.apply(init_weights)
-
         # 初始化最后一次前向传播的损失属性
         self.last_loss = None
         self.OUT = CausalLMOutputWithPast()  # 输出容器
         self._no_split_modules = [name for name, _ in self.named_modules()]  # 不分割的模块列表
+        # 初始化所有权重
+        # self.apply(init_weights)
+        # Initialize weights and apply final processing
+        self.post_init()
 
     def forward(
         self,
