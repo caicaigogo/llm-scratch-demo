@@ -2,12 +2,14 @@ import argparse
 import os
 import json
 from loguru import logger
+import torch
 
 from transformers import (
     HfArgumentParser,
     TrainingArguments,
     set_seed,
     AutoTokenizer,
+    AutoModelForCausalLM,
     AutoConfig
 )
 
@@ -94,6 +96,62 @@ def load_tokenizer(args):
     return tokenizer
 
 
+def load_model(args, training_args):
+    """
+    加载模型
+    """
+    logger.info(f'Loading model from base model: {args.model_name_or_path}')
+    # logger.info(f'Train model with {args.train_mode}')
+
+    # init model kwargs
+    # todo add flash attention
+    # attn_implementation = None
+    torch_dtype = torch.float32
+
+    model_kwargs = dict(
+        trust_remote_code=True,
+        torch_dtype=torch_dtype,
+        device_map=None
+    )
+
+    # LLaMAForCausalLM(
+    #   (model): LLaMAModel(
+    #     (embed_tokens): Embedding(6144, 512)
+    #     (layers): ModuleList(
+    #       (0-1): 2 x DecoderLayer(
+    #         (self_attn): Attention(
+    #           (q_proj): Linear(in_features=512, out_features=512, bias=False)
+    #           (k_proj): Linear(in_features=512, out_features=256, bias=False)
+    #           (v_proj): Linear(in_features=512, out_features=256, bias=False)
+    #           (o_proj): Linear(in_features=512, out_features=512, bias=False)
+    #         )
+    #         (mlp): MLP(
+    #           (gate_proj): Linear(in_features=512, out_features=3072, bias=False)
+    #           (up_proj): Linear(in_features=512, out_features=3072, bias=False)
+    #           (down_proj): Linear(in_features=3072, out_features=512, bias=False)
+    #           (act_fn): SiLU()
+    #         )
+    #         (input_layernorm): RMSNorm((512,), eps=1e-05)
+    #         (post_attention_layernorm): RMSNorm((512,), eps=1e-05)
+    #       )
+    #     )
+    #     (norm): RMSNorm((512,), eps=1e-05)
+    #   )
+    #   (lm_head): Linear(in_features=512, out_features=6144, bias=False)
+    # )
+
+    model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, **model_kwargs)
+    print(model)
+
+    # 计算模型参数量
+    total = sum(p.numel() for p in model.parameters())
+    logger.info("Total model params: %.2fM" % (total / 1e6))
+
+    return {
+        'model': model
+    }
+
+
 def init_components(cus_args, training_args):
     """
     初始化各个组件
@@ -103,6 +161,11 @@ def init_components(cus_args, training_args):
 
     # 加载tokenizer
     tokenizer = load_tokenizer(cus_args)
+    # 加载model
+
+    components = load_model(cus_args, training_args)
+    model = components['model']
+
 
 def main():
     # 进行一些配置和检查
@@ -110,6 +173,7 @@ def main():
 
     # 加载各种组件
     trainer = init_components(cus_args, training_args)
+
 
 if __name__ == "__main__":
     main()

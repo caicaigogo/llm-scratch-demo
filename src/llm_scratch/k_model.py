@@ -363,6 +363,7 @@ class LLaMAModel(PreTrainedModel):
         return hidden_states
 
 class LLaMAForCausalLM(PreTrainedModel):
+    config_class = ModelConfig  # 配置类 必须要有，否则AutoModelForCausalLM.from_pretrained 会报错
 
     def __init__(self, config: PretrainedConfig):
         super().__init__(config)
