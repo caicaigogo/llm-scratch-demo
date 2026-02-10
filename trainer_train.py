@@ -19,7 +19,9 @@ from transformers import (
 )
 
 from llm_scratch.train_component.argument import CustomizedArguments
-from llm_scratch.train_component.collator import PretrainCollator
+from llm_scratch.train_component.collator import PretrainCollator, SFTDataCollator
+from llm_scratch.train_component.template import template_dict
+from llm_scratch.train_component.dataset import UnifiedSFTDataset
 
 
 def setup_everything():
@@ -286,6 +288,16 @@ def load_pretrain_dataset(training_args, cus_args, tokenizer):
     return pretrain_dataset
 
 
+def load_sft_dataset(cus_args, tokenizer):
+    if cus_args.template_name not in template_dict.keys():
+        raise Exception(f"template_name doesn't exist, all template_name: {template_dict.keys()}")
+    template = template_dict[cus_args.template_name]
+
+    logger.info('Loading data with UnifiedSFTDataset')
+    train_dataset = UnifiedSFTDataset(cus_args.train_file, tokenizer, cus_args.max_seq_len, template)
+    return train_dataset
+
+
 def init_components(cus_args, training_args):
     """
     初始化各个组件
@@ -305,7 +317,10 @@ def init_components(cus_args, training_args):
         logger.info('Train model with pretrain task')
         train_dataset = load_pretrain_dataset(training_args, cus_args, tokenizer)
         data_collator = PretrainCollator(tokenizer, cus_args.max_seq_len)
-
+    elif cus_args.task_type == 'sft':
+        logger.info('Train model with sft task')
+        train_dataset = load_sft_dataset(cus_args, tokenizer)
+        data_collator = SFTDataCollator(tokenizer, cus_args.max_seq_len)
     else:
         raise Exception('no support task_type')
 

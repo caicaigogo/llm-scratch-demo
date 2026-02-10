@@ -2,7 +2,7 @@
     "model_name_or_path": "k-model-215M",
     "max_seq_len": 512,
     "task_type": "pretrain",
-    "output_dir": "output/firefly-scratch-100m-pretrain-full",
     "train_file": "./data/pretrain",
-    "tokenize_num_workers": 1
+    "tokenize_num_workers": 1,
+    "output_dir": "output/firefly-scratch-100m-pretrain-full"
 }

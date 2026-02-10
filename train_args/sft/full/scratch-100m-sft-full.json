@@ -1,0 +1,9 @@
+{
+    "model_name_or_path": "k-model-215M",
+    "max_seq_len": 512,
+    "task_type": "sft",
+    "train_file": "./data/sft_train_50_CN.jsonl",
+    "tokenize_num_workers": 1,
+    "template_name": "qwen",
+    "output_dir": "output/firefly-scratch-100m-sft-full"
+}
