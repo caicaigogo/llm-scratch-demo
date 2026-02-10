@@ -3,6 +3,8 @@ import torch
 from torch import nn
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.models import Qwen2Model, Qwen2ForCausalLM
+import sys
+
 
 class ModelConfig(PretrainedConfig):
     model_type = "Tiny-K"
@@ -370,7 +372,11 @@ class LLaMAForCausalLM(PreTrainedModel):
     # [{'lm_head.weight', 'model.embed_tokens.weight'}] that are mismatching the transformers base configuration.
     # Try saving using `safe_serialization=False`, setting the `_dynamic_t
     # ied_weights_keys` attribute for affected modules, or remove this tensor sharing.
-    _tied_weights_keys = ["lm_head.weight"]
+
+    # 但是linux有的话会报错，tied_weight_keys.extend([f"{name}.{k}" if name else k for k in tied.keys()])
+    if sys.platform == 'win32':
+        _tied_weights_keys = ["lm_head.weight"]
+
     def __init__(self, config: PretrainedConfig):
         super().__init__(config)
         self.model = LLaMAModel(config)
