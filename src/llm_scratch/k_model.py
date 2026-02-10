@@ -386,6 +386,7 @@ class LLaMAForCausalLM(PreTrainedModel):
         input_ids,
         targets = None,
         attention_mask = None,
+        loss_mask=None,
         labels =None
 
     ):
@@ -393,19 +394,18 @@ class LLaMAForCausalLM(PreTrainedModel):
         # -> (batch_size, seq_len, hidden_size)
         hidden_states = self.model(input_ids)
 
-
         if labels is not None:
             # 如果给定了目标，计算损失
             # (batch_size, seq_len, vocab_size)
             # -> (batch_size, seq_len, vocab_size)
             vocab_logits = self.lm_head(hidden_states)
-            self.last_loss = None
+            last_loss = None
 
             # cross_entropy 的input 的第二个维度（或第一个维度，当无 batch 时）必须是类别数 C， 即vocab_SIZE
             # input ： (batch_size, seq_len, vocab_size) -> (batch_size * seq_len, vocab_size)
             # labels : (batch_size, seq_len) -> (batch_size * seq_len)
             # loss: (batch_size * seq_len)
-            self.last_loss = nn.functional.cross_entropy(vocab_logits.view(-1, vocab_logits.size(-1)), labels.view(-1), ignore_index=0, reduction='none')
+            loss = nn.functional.cross_entropy(vocab_logits.view(-1, vocab_logits.size(-1)), labels.view(-1), ignore_index=0, reduction='none')
 
             # (batch_size, seq_len)
             # -> (batch_size * seq_len)
@@ -413,20 +413,19 @@ class LLaMAForCausalLM(PreTrainedModel):
             # 应用掩码计算有效损失（忽略padding位置）
 
             # tensor(1.1065, grad_fn=<DivBackward0>) torch.Size([])
-            loss = torch.sum(self.last_loss * attention_mask) / attention_mask.sum()
+            loss = torch.sum(loss * attention_mask) / attention_mask.sum()
 
         elif targets is not None:
             # 如果给定了目标，计算损失
             # (batch_size, seq_len, vocab_size)
             # -> (batch_size, seq_len, vocab_size)
             vocab_logits = self.lm_head(hidden_states)
-            self.last_loss = None
-
+            loss = None
             # cross_entropy 的input 的第二个维度（或第一个维度，当无 batch 时）必须是类别数 C， 即vocab_SIZE
             # input ： (batch_size, seq_len, vocab_size) -> (batch_size * seq_len, vocab_size)
             # target : (batch_size, seq_len) -> (batch_size * seq_len)
             # last_loss: (batch_size * seq_len)
-            self.last_loss = nn.functional.cross_entropy(vocab_logits.view(-1, vocab_logits.size(-1)), targets.view(-1), ignore_index=0, reduction='none')
+            last_loss = nn.functional.cross_entropy(vocab_logits.view(-1, vocab_logits.size(-1)), targets.view(-1), ignore_index=0, reduction='none')
 
         else:
             # (batch_size, seq_len, hidden_size)
@@ -439,7 +438,7 @@ class LLaMAForCausalLM(PreTrainedModel):
         # 设置输出
         self.OUT.__setitem__('logits', vocab_logits)
         self.OUT.__setitem__('loss', loss)
-        self.OUT.__setitem__('last_loss', self.last_loss)
+        self.OUT.__setitem__('last_loss', last_loss)
 
         return self.OUT
 

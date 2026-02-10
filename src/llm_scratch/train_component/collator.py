@@ -45,5 +45,3 @@ class PretrainCollator(object):
             'labels': labels_batch
         }
         return inputs
-
-from transformers.models import Qwen2ForCausalLM
