@@ -366,6 +366,11 @@ class LLaMAModel(PreTrainedModel):
 class LLaMAForCausalLM(PreTrainedModel):
     config_class = ModelConfig  # 配置类 必须要有，否则AutoModelForCausalLM.from_pretrained 会报错
 
+    # window 必须配置，否则会有The weights trying to be saved contained shared tensors
+    # [{'lm_head.weight', 'model.embed_tokens.weight'}] that are mismatching the transformers base configuration.
+    # Try saving using `safe_serialization=False`, setting the `_dynamic_t
+    # ied_weights_keys` attribute for affected modules, or remove this tensor sharing.
+    _tied_weights_keys = ["lm_head.weight"]
     def __init__(self, config: PretrainedConfig):
         super().__init__(config)
         self.model = LLaMAModel(config)
