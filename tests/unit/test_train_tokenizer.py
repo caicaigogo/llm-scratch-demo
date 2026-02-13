@@ -1,18 +1,3 @@
-import torch
-from torch import nn
-
-from llm_scratch.k_model import (
-    precompute_freq_cos_sin,
-    precompute_causal_mask,
-)
-
-from llm_scratch.moe_model import (
-    ModelConfig,
-    MLA,
-    Gate,
-    MoE
-)
-
 import unittest
 import os
 import json
